@@ -260,6 +260,7 @@ module aquafuse_conv_stage #(
         assign win_word[8*ch +: 8] = {1'b0, in_range ? win_raw[7*ch +: 7] : 7'd0};
     end
     assign act = $signed(win_word[8*(IN_CH-1-w_ci) +: 8]);
+    wire act_nz = (act != 8'sd0);
 
     // lane sequencing: shared multiplier in MAC, shared requantiser in EMIT
     localparam int LW = (OUT_CH <= 1) ? 1 : $clog2(OUT_CH);
@@ -291,7 +292,9 @@ module aquafuse_conv_stage #(
     wire load_all = ((st == IDLE) && ready_now) || ((st == EMIT) && (lane_q == LW'(OUT_CH-1)));
     for (genvar l = 0; l < OUT_CH; l++) begin : g_lane
         wire aclk, oclk;
-        aquafuse_icg u_acg (.clk(clk), .en(load_all || ((st == MAC) && (lane_q == LW'(l)))), .gclk(aclk));
+        // ZERO-SKIP: a zero activation (post-ReLU; 40-55% of operands on real frames, scripts/vps/activation_sparsity.py) adds nothing,
+        // so the accumulator is not clocked at all. Exact, not approximate.
+        aquafuse_icg u_acg (.clk(clk), .en(load_all || ((st == MAC) && (lane_q == LW'(l)) && act_nz)), .gclk(aclk));
         aquafuse_icg u_ocg (.clk(clk), .en((st == EMIT) && (lane_q == LW'(l))), .gclk(oclk));
         logic signed [ACC_W-1:0] a_q;
         logic [7:0] o_q;
