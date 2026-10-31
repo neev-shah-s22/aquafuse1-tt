@@ -14,7 +14,7 @@ localparam logic [191:0] BIAS_B2 = 192'hfffffd47fffff4e00000005700000709fffffc71
 localparam logic signed [31:0] BIAS_OBJ = -508;
 
 // The EMA of the stem accumulator: stored width and LSB (DR 0093).
-localparam int EMA_W = 10;
+localparam int EMA_W = 6;
 localparam int EMA_Q = 8;
 localparam int BG_BLOCK = 0;   // 0: one entry per cell
 
