@@ -289,13 +289,16 @@ module aquafuse_conv_stage #(
     // all output bytes on every cycle (cclk) paid the flop clock pin 6x for one useful write
     // (measured: these ~4.4 uW-per-cell flops were the stage's whole power; the latch store is ~0.5 nW).
     // Same values in the same order as the cclk version, so the results are bit-identical.
+    // ENERGY (ser15): the lane gates are fed from cclk, not clk. Every lane enable implies ctl_en (load_all needs
+    // ready_now or st != IDLE; MAC and EMIT are st != IDLE), so the gated clocks are identical, and while the stage is
+    // idle these 2*OUT_CH gates no longer see a clock at all (each gate's own clock pin cost ~6.9 nJ per frame).
     wire load_all = ((st == IDLE) && ready_now) || ((st == EMIT) && (lane_q == LW'(OUT_CH-1)));
     for (genvar l = 0; l < OUT_CH; l++) begin : g_lane
         wire aclk, oclk;
         // ZERO-SKIP: a zero activation (post-ReLU; 40-55% of operands on real frames, scripts/vps/activation_sparsity.py) adds nothing,
         // so the accumulator is not clocked at all. Exact, not approximate.
-        aquafuse_icg u_acg (.clk(clk), .en(load_all || ((st == MAC) && (lane_q == LW'(l)) && act_nz)), .gclk(aclk));
-        aquafuse_icg u_ocg (.clk(clk), .en((st == EMIT) && (lane_q == LW'(l))), .gclk(oclk));
+        aquafuse_icg u_acg (.clk(cclk), .en(load_all || ((st == MAC) && (lane_q == LW'(l)) && act_nz)), .gclk(aclk));
+        aquafuse_icg u_ocg (.clk(cclk), .en((st == EMIT) && (lane_q == LW'(l))), .gclk(oclk));
         logic signed [ACC_W-1:0] a_q;
         logic [7:0] o_q;
         always_ff @(posedge aclk or negedge rst_n) begin

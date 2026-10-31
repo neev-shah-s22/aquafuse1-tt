@@ -366,7 +366,11 @@ module tt_um_aquafuse_stream12c #(
     // the sensitivity while testing rstn in the body describes two different
     // resets and yosys rejects it ("Multiple edge sensitive events"). The
     // synchroniser exists precisely so downstream logic can be synchronous.
-    always @(posedge clk) begin
+    // ENERGY (ser15): these flops change only on reset, a row end, during a flush and at frame_start, so they are
+    // clocked on exactly those cycles; on the free-running clock each cost ~6.9 nJ per frame for nothing.
+    wire flush_clk;
+    aquafuse_icg u_cg_flush (.clk(clk), .en(!rstn | stem_row_done | stem_flush | frame_start), .gclk(flush_clk));
+    always @(posedge flush_clk) begin
         if (!rstn) begin
             stem_flush <= 1'b0; flush_col <= '0; stem_row <= '0;
         end else if (stem_row_done) begin
@@ -711,7 +715,13 @@ module tt_um_aquafuse_stream12c #(
     end
     wire sus_next = (cfg_m != '0) && (count_next >= cfg_m);
 
-    always @(posedge clk) begin
+    // ENERGY (ser15): the ~80 decision flops (score, obj_max, alarm_hist, hold_cnt, ...) were on the free-running clock
+    // and change only in the cycles below: the reset, each branch of the chain, the decision, and the cycle after
+    // result_valid (which clears it). In every other cycle the block assigns each flop its own value.
+    wire dec_clk;
+    aquafuse_icg u_cg_dec (.clk(clk),
+        .en(!rstn | frame_start | s2_valid | frame_end | frame_ready | decide | result_valid), .gclk(dec_clk));
+    always @(posedge dec_clk) begin
         if (!rstn) begin
             obj_max <= '0; obj_seen <= 1'b0;
             obj_n <= '0; fe_pending <= 1'b0;
