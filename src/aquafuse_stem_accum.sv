@@ -78,9 +78,22 @@ module aquafuse_stem_accum #(
 
     // flat view for the one-hot read ports (aquafuse_sel), GF180 area
     wire [OUT_W*COUT*ACC_W-1:0] acc_flat;
-    wire [COUT*ACC_W-1:0] rd_mac_word, rd_out_word;
-    aquafuse_sel #(.N(OUT_W), .W(COUT*ACC_W)) u_rd_mac (.words(acc_flat), .sel(mac_col), .y(rd_mac_word));
-    aquafuse_sel #(.N(OUT_W), .W(COUT*ACC_W)) u_rd_out (.words(acc_flat), .sel(rd_col),  .y(rd_out_word));
+    wire [COUT*ACC_W-1:0] rd_mac_raw, rd_out_raw, rd_mac_word, rd_out_word;
+    aquafuse_sel #(.N(OUT_W), .W(COUT*ACC_W)) u_rd_mac (.words(acc_flat), .sel(mac_col), .y(rd_mac_raw));
+    aquafuse_sel #(.N(OUT_W), .W(COUT*ACC_W)) u_rd_out (.words(acc_flat), .sel(rd_col),  .y(rd_out_raw));
+
+    // LIVE FLAGS (GF180 area, ser14). A column whose live bit is 0 reads as zero whatever its
+    // latches hold, so a clear is one flag flop instead of a write of COUT*ACC_W bits. That is
+    // what lets the accumulators be latches written from ONE staging register (below): the
+    // only write a latch ever takes is a MAC's sum, so every column's data input is the same
+    // net and no column needs a zeroing gate per bit. Padded to the select's range so an index
+    // past OUT_W reads 0, as aquafuse_sel's zero leaves do.
+    localparam int CW = $clog2(OUT_W);
+    localparam int NL = 1 << CW;
+    logic [OUT_W-1:0] live;
+    wire  [NL-1:0]    live_p = NL'(live);
+    assign rd_mac_word = {(COUT*ACC_W){live_p[mac_col]}} & rd_mac_raw;
+    assign rd_out_word = {(COUT*ACC_W){live_p[rd_col]}}  & rd_out_raw;
 
     // A SIGNED zero, and it has to be spelled out. `{ACC_W{1'b0}}` and a bare
     // `'0` are UNSIGNED, and a ternary with one unsigned operand makes the
@@ -128,26 +141,45 @@ module aquafuse_stem_accum #(
             + ACC_W'($signed(mac_act) * $signed(mac_wgt[8*(COUT-1-l) +: 8]));
     end
 
-    // ONE CLOCK GATE PER COLUMN (GF180 area; was a 3-way enable on every bit).
-    // The column is clocked when anything writes it, and then takes acc_next if the
-    // MAC hits it (and no bank_clear), else zero -- the same priority as before:
-    // bank_clear, then MAC, then column clear.
-    for (genvar p = 0; p < OUT_W; p++) begin : g_col
-        wire sel_mac = mac_en && (mac_col == ($clog2(OUT_W))'(p));
-        wire en_p    = bank_clear || sel_mac || (col_clear && (clear_col == ($clog2(OUT_W))'(p)));
-        wire gclk;
-        aquafuse_icg u_cg (.clk(clk), .en(en_p), .gclk(gclk));
-        for (genvar l = 0; l < COUT; l++) begin : g_lane
-            logic signed [ACC_W-1:0] r;
-            // NO RESET (GF180 area: dffq is 15% smaller than dffrnq). Every frame opens with
-            // bank_clear (frame_start), which clocks and zeroes every column before the
-            // first MAC or read of that frame, so the power-up value is never used.
-            always_ff @(posedge gclk) begin
-                if (bank_clear || !sel_mac) r <= ACC_ZERO;
-                else                        r <= acc_next[l];
+    // THE COLUMN STATE, same priority as the flop version it replaces (ser13 and before:
+    // one gated flop row per column, each bit behind a zeroing gate): bank_clear, then MAC,
+    // then column clear.
+    //   live[p]  -- set by a MAC on p, cleared by bank_clear or by a clear of p.
+    //   word p   -- latches, written only by a MAC on p (a MAC that loses to bank_clear may
+    //               still write them; live is 0 then, so nothing ever reads that value).
+    // Reset: live clears on rst_n, so a column reads zero from power-up whatever its latches
+    // hold; the flop version relied on the first frame's bank_clear for the same thing.
+    wire lclk;
+    aquafuse_icg u_lcg (.clk(clk), .en(bank_clear | mac_en | col_clear), .gclk(lclk));
+    always_ff @(posedge lclk or negedge rst_n) begin
+        if (!rst_n)
+            live <= '0;
+        else
+            for (int p = 0; p < OUT_W; p++) begin
+                if (bank_clear)                              live[p] <= 1'b0;
+                else if (mac_en && mac_col == CW'(p))        live[p] <= 1'b1;
+                else if (col_clear && clear_col == CW'(p))   live[p] <= 1'b0;
             end
-            assign acc_flat[(p*COUT + l)*ACC_W +: ACC_W] = r;
-        end
+    end
+
+    // LATCH STORAGE (GF180 area; the pattern of aquafuse_bg_store). A latch is ~30% smaller
+    // than a flop, and with the clears gone every column's data input is the staging register
+    // stage_q, so the per-bit zeroing gate goes too. stage_q takes the sum at the edge that
+    // opens the target column's latches (both on mac_en, sampled the cycle before that edge),
+    // so the latch ends its high phase holding exactly what the flop captured. A read of that
+    // column in the next cycle sees the new sum, as it did from the flop.
+    logic [COUT*ACC_W-1:0] acc_next_word, stage_q;
+    for (genvar l = 0; l < COUT; l++) begin : g_nw
+        assign acc_next_word[l*ACC_W +: ACC_W] = acc_next[l];
+    end
+    wire sclk;
+    aquafuse_icg u_scg (.clk(clk), .en(mac_en), .gclk(sclk));
+    always_ff @(posedge sclk) stage_q <= acc_next_word;
+    wire [OUT_W-1:0] gclk_v;
+    aquafuse_wgate #(.NS(1), .NC(OUT_W)) u_wg (.clk(clk), .en(mac_en), .slot(1'b0), .col(mac_col), .gclk(gclk_v));
+    for (genvar p = 0; p < OUT_W; p++) begin : g_col
+        aquafuse_lat #(.W(COUT*ACC_W)) u_lat (.en(gclk_v[p]), .d(stage_q),
+                                              .q(acc_flat[p*COUT*ACC_W +: COUT*ACC_W]));
     end
 
     // Readout is split so the column select is a CONTINUOUS assign and the
