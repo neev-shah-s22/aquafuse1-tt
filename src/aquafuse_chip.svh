@@ -16,7 +16,7 @@ localparam logic signed [31:0] BIAS_OBJ = -508;
 // The EMA of the stem accumulator: stored width and LSB (DR 0093).
 localparam int EMA_W = 10;
 localparam int EMA_Q = 8;
-localparam int BG_BLOCK = 0;   // 0: one entry per cell
+localparam int BG_BLOCK = 2;   // 0: one entry per cell
 
 // The temporal head (TEMPORAL_K > 1): a K-frame 3x3 convolution over the
 // head's maps, each stored as round_shift(logit, OBJ_SH) in OBJ_T_W bits.
