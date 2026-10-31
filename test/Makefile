@@ -41,9 +41,16 @@ COMPILE_ARGS    += -DFUNCTIONAL
 COMPILE_ARGS    += -DUSE_POWER_PINS
 COMPILE_ARGS    += -DSIM
 COMPILE_ARGS    += -DUNIT_DELAY=\#1
-# GF180 cell models, as in TinyTapeout/ttgf-verilog-template (these were still the SKY130 ones)
-VERILOG_SOURCES += $(PDK_ROOT)/gf180mcuD/libs.ref/gf180mcu_fd_sc_mcu7t5v0/verilog/primitives.v
-VERILOG_SOURCES += $(PDK_ROOT)/gf180mcuD/libs.ref/gf180mcu_fd_sc_mcu7t5v0/verilog/gf180mcu_fd_sc_mcu7t5v0.v
+# GF180 cell models, as in TinyTapeout/ttgf-verilog-template (these were still the SKY130 ones), except that the cell
+# models are a copy with 1 ns clock-to-Q on every flop and latch: the PDK's are zero-delay, and with this part's gated
+# clocks a zero-delay netlist simulation races (see gl_models_dly.sh). The copy is checked to have changed something.
+GF_MODELS := $(PDK_ROOT)/gf180mcuD/libs.ref/gf180mcu_fd_sc_mcu7t5v0/verilog
+GF_MODELS_DLY := $(shell bash $(PWD)/gl_models_dly.sh $(GF_MODELS) $(PWD)/sim_build/gf180_models_dly.v)
+ifeq ($(GF_MODELS_DLY),)
+$(error gl_models_dly.sh failed to write the delayed GF180 cell models)
+endif
+VERILOG_SOURCES += $(GF_MODELS)/primitives.v
+VERILOG_SOURCES += $(GF_MODELS_DLY)
 
 # this gets copied in by the GDS action workflow
 VERILOG_SOURCES += $(PWD)/gate_level_netlist.v
