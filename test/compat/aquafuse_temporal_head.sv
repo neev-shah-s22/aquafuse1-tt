@@ -74,16 +74,18 @@ module aquafuse_temporal_head #(
 
     // ONE CLOCK GATE PER WORD (aquafuse_icg), not a write multiplexer per bit.
     wire signed [MW-1:0] wr_narrow = narrow(wr_val);
+    // latch storage (GF180 area): fed from a register so the latch, transparent in the high
+    // phase after the edge, holds this cycle's value (see aquafuse_bg_store)
+    logic [MW-1:0] wr_q;
+    wire hclk;   // gated control clock, see u_hctl below
+    always_ff @(posedge hclk) wr_q <= wr_narrow;
+    wire [K*N-1:0] gclk_v;   // ENERGY: shared enable latch + decoded AND per cell (aquafuse_wgate)
+    aquafuse_wgate #(.NS(K), .NC(N)) u_wg (.clk(clk), .en(wr_en), .slot(wslot), .col(wr_idx), .gclk(gclk_v));
     for (genvar s = 0; s < K; s++) begin : g_slot
         for (genvar c = 0; c < N; c++) begin : g_cell
-            logic gclk;
-            aquafuse_icg u_cg (
-                .clk (clk),
-                .en  (wr_en && wslot == 2'(s) && wr_idx == ($clog2(N))'(c)),
-                .gclk(gclk)
-            );
+            wire gclk = gclk_v[s*N + c];
             logic [MW-1:0] word;
-            always_ff @(posedge gclk) word <= wr_narrow;
+            aquafuse_lat #(.W(MW)) u_lat (.en(gclk), .d(wr_q), .q(word));
             assign ring[(s*N + c)*MW +: MW] = word;
         end
     end
@@ -91,9 +93,16 @@ module aquafuse_temporal_head #(
     // ---- the sequential convolution ------------------------------------------
     typedef enum logic [1:0] {IDLE, RUN, FIN} st_t;
     st_t st;
+
+    // ENERGY: the head works for a few thousand cycles after each frame and is idle the rest
+    // of the time, yet its accumulator, counters and staging register were clocked every cycle.
+    // Clock them for a cell write, a start, any state but IDLE, and the cycle `done` clears.
+    wire hctl_en = wr_en | start | (st != IDLE) | done;
+    aquafuse_icg u_hctl (.clk(clk), .en(hctl_en), .gclk(hclk));
     logic [$clog2(N)-1:0]    cix;
     logic [$clog2(TAPS)-1:0] tap;
-    logic signed [31:0]      acc, best;
+    // 24 bits: |acc| <= 27 taps * 128 * 512 + |T_B| < 2^23 (GF180 area; was 32)
+    logic signed [23:0]      acc, best;
     logic                    have_best;
 
     // the tap's frame, row and column offsets
@@ -101,7 +110,8 @@ module aquafuse_temporal_head #(
     wire [3:0]           t9 = 4'(tap % 9);
     // SIMULATION-ONLY COPY for Icarus Verilog 12 (the TT test action's simulator): it rejects an
     // unsized divisor inside a concatenation ("indefinite width"). The sized form below is the
-    // same arithmetic; ../src/aquafuse_temporal_head.sv is the file that is hardened, unchanged.
+    // same arithmetic; ../src/aquafuse_temporal_head.sv is the file that is hardened. This copy is
+    // the hardened file with only these two lines changed (test/Makefile checks it with diff).
     wire signed [3:0]    di = $signed({2'b0, t9 / 4'd3}) - 4'sd1;
     wire signed [3:0]    dj = $signed({2'b0, t9 % 4'd3}) - 4'sd1;
     wire [$clog2(GH)-1:0] r0 = ($clog2(GH))'(cix / GW);
@@ -126,9 +136,9 @@ module aquafuse_temporal_head #(
     wire signed [7:0] wv = $signed(T_W[8*(TAPS-1-tap) +: 8]);
     // BOTH operands widened first: inside a cast the product is self-determined,
     // so `32'(wv * mval)` would multiply at 10 bits and overflow before widening
-    wire signed [31:0] prod = 32'($signed(wv)) * 32'($signed(mval));
+    wire signed [23:0] prod = 24'($signed(wv)) * 24'($signed(mval));
 
-    always_ff @(posedge clk or negedge rst_n) begin
+    always_ff @(posedge hclk or negedge rst_n) begin
         if (!rst_n) begin
             st <= IDLE; done <= 1'b0; seen <= 2'd0; wslot <= 2'd0;
             cix <= '0; tap <= '0; acc <= '0; best <= '0; have_best <= 1'b0;
@@ -137,7 +147,7 @@ module aquafuse_temporal_head #(
             done <= 1'b0;
             case (st)
                 IDLE: if (start) begin
-                    cix <= '0; tap <= '0; acc <= T_B; have_best <= 1'b0;
+                    cix <= '0; tap <= '0; acc <= 24'(T_B); have_best <= 1'b0;
                     st <= RUN;
                 end
                 RUN: begin
@@ -146,7 +156,7 @@ module aquafuse_temporal_head #(
                         if (!have_best || (acc + prod) > best)
                             best <= acc + prod;
                         have_best <= 1'b1;
-                        acc <= T_B;
+                        acc <= 24'(T_B);
                         tap <= '0;
                         if (cix == ($clog2(N))'(N - 1)) st <= FIN;
                         else cix <= cix + 1'b1;

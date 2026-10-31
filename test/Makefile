@@ -19,12 +19,18 @@ ifneq ($(GATES),yes)
 # with a sized divisor. The file that is HARDENED is ../src/aquafuse_temporal_head.sv, untouched.
 SIM_BUILD				= sim_build/rtl
 # Icarus simulates this RTL at about 260 s per frame (VPS, 19 Oct 2026), so the 32-frame clip plus the config test
-# would run for 3-5 hours against GitHub's 6-hour job limit. 12 frames reach the first alarm (frame 5) and the
-# wake bit's rising edge (frame 7). All 32 frames in RTL are covered by the project's Verilator equivalence run, and
+# would run for 3-5 hours against GitHub's 6-hour job limit. 12 frames reach the first alarm (frame 3) and the
+# wake bit's rising edge (frame 5). All 32 frames in RTL are covered by the project's Verilator equivalence run, and
 # the gate-level job below keeps all 32. Set AQUAFUSE_FRAMES=32 for the full RTL clip.
 export AQUAFUSE_FRAMES ?= 12
 VERILOG_SOURCES += $(addprefix $(SRC_DIR)/,$(filter-out aquafuse_temporal_head.sv,$(PROJECT_SOURCES)))
 VERILOG_SOURCES += $(PWD)/compat/aquafuse_temporal_head.sv
+# The compat copy must stay the hardened file except for its two sized divisors; stop if it has drifted (it did once,
+# from ser3 to ser12, and the RTL test then simulated a head the chip does not have).
+COMPAT_DRIFT := $(shell diff $(SRC_DIR)/aquafuse_temporal_head.sv $(PWD)/compat/aquafuse_temporal_head.sv | grep -c '^[<>]')
+ifneq ($(COMPAT_DRIFT),8)
+$(error test/compat/aquafuse_temporal_head.sv has drifted from src/ ($(COMPAT_DRIFT) changed lines, expected 8))
+endif
 
 else
 
@@ -35,8 +41,9 @@ COMPILE_ARGS    += -DFUNCTIONAL
 COMPILE_ARGS    += -DUSE_POWER_PINS
 COMPILE_ARGS    += -DSIM
 COMPILE_ARGS    += -DUNIT_DELAY=\#1
-VERILOG_SOURCES += $(PDK_ROOT)/sky130A/libs.ref/sky130_fd_sc_hd/verilog/primitives.v
-VERILOG_SOURCES += $(PDK_ROOT)/sky130A/libs.ref/sky130_fd_sc_hd/verilog/sky130_fd_sc_hd.v
+# GF180 cell models, as in TinyTapeout/ttgf-verilog-template (these were still the SKY130 ones)
+VERILOG_SOURCES += $(PDK_ROOT)/gf180mcuD/libs.ref/gf180mcu_fd_sc_mcu7t5v0/verilog/primitives.v
+VERILOG_SOURCES += $(PDK_ROOT)/gf180mcuD/libs.ref/gf180mcu_fd_sc_mcu7t5v0/verilog/gf180mcu_fd_sc_mcu7t5v0.v
 
 # this gets copied in by the GDS action workflow
 VERILOG_SOURCES += $(PWD)/gate_level_netlist.v

@@ -117,7 +117,7 @@ async def test_golden_frames(dut):
             mismatches.append((f, (alarm, detect, over), (want_alarm, shaped[f])))
     dut._log.info(f"{n} frames: {alarms} raw alarms, {wakes} wake bits; mismatches {mismatches}")
     assert not mismatches, f"frame results differ from the oracle: {mismatches}"
-    # a shortened run must still reach the decision: the clip first alarms at frame 5 and the wake bit first rises at frame 7
+    # a shortened run must still reach the decision: the clip first alarms at frame 3 and the wake bit first rises at frame 5 (EMA10 oracle)
     assert sum(int(logits[f] + offset >= 0) for f in range(n)) >= 1, "AQUAFUSE_FRAMES is too small to reach the first alarm"
     assert alarms >= 1, "the chip never raised the raw alarm"
     if sum(shaped[:n]) >= 1:
