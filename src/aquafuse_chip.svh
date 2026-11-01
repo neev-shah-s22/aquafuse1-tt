@@ -14,8 +14,8 @@ localparam logic [191:0] BIAS_B2 = 192'hfffffd47fffff4e00000005700000709fffffc71
 localparam logic signed [31:0] BIAS_OBJ = -508;
 
 // The EMA of the stem accumulator: stored width and LSB (DR 0093).
-localparam int EMA_W = 10;
-localparam int EMA_Q = 8;
+localparam int EMA_W = 8;   // LAYOUT PROBE gf-C-ser15-v23: same range, coarser LSB; accuracy pending, not a candidate until regen_stream12c + gate
+localparam int EMA_Q = 10;
 localparam int BG_BLOCK = 0;   // 0: one entry per cell
 
 // The temporal head (TEMPORAL_K > 1): a K-frame 3x3 convolution over the
