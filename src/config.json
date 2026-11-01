@@ -45,6 +45,9 @@
   "CTS_APPLY_NDR": "none",
   "//": "ser15-m1: detailed routing may use Metal1 (pin access). r1 and s6 routed on Metal2-4 only (Metal1 0 um, Metal5 forbidden), shorts on Metal2 dominated",
   "DRT_MIN_LAYER": "Metal1",
+  "//": "ser15-v3: one site of padding per cell for pin access in the latch arrays (r1: shorts on Metal2 at 42 % global usage)",
+  "GPL_CELL_PADDING": 1,
+  "DPL_CELL_PADDING": 1,
 
   "//": "RUN_LINTER, LINTER_INCLUDE_PDK_MODELS - Disabling the linter is not recommended!",
   "RUN_LINTER": 1,
