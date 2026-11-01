@@ -45,6 +45,11 @@
   "CTS_APPLY_NDR": "none",
   "//": "ser15-m1: detailed routing may use Metal1 (pin access). r1 and s6 routed on Metal2-4 only (Metal1 0 um, Metal5 forbidden), shorts on Metal2 dominated",
   "DRT_MIN_LAYER": "Metal1",
+  "//": "ser15-v5: electrical closure. s6 ended with 11,811 slew and 420 cap violations at max_ss_125C_3v00 (21 ns slews vs the 3 ns limit) because the resizer and CTS used the default corner only and nothing repaired after global routing (DR0109 gate: zero slew/cap, hold >= 0.10 ns in nine corners)",
+  "RSZ_CORNERS": ["max_ss_125C_3v00", "nom_tt_025C_3v30", "min_ff_n40C_3v60"],
+  "CTS_CORNERS": ["max_ss_125C_3v00", "nom_tt_025C_3v30", "min_ff_n40C_3v60"],
+  "RUN_POST_GRT_DESIGN_REPAIR": 1,
+  "RUN_POST_GRT_RESIZER_TIMING": 1,
 
   "//": "RUN_LINTER, LINTER_INCLUDE_PDK_MODELS - Disabling the linter is not recommended!",
   "RUN_LINTER": 1,
