@@ -43,6 +43,8 @@
   "//": "ser16-i/j: v25 hold repair closed to +0.1 ns on pre-route estimates but routed STA read -1.0 to -2.9 ns in all 9 corners; margin to cover that, and let hold repair trade into the latch-borrow setup reading (0 by construction at 160 ns; the latch-aware audit checks real setup)",
   "PL_RESIZER_ALLOW_SETUP_VIOS": 1,
   "GRT_RESIZER_ALLOW_SETUP_VIOS": 1,
+  "//": "ser16-k/l: LibreLane counts any setup slack < 0 with no tolerance; v25 failed on -2 fs at one latch D pin (borrowing: arrival == required, CRPR rounding). Setup violations become warnings; the setup gate is the latch-aware audit (s110_electrical_audit --latch, >= 2.0 ns in 9 corners, DR0110), run on every candidate.",
+  "SETUP_VIOLATION_CORNERS": [""],
   "GRT_ADJUSTMENT": 0.0,
   "GRT_OVERFLOW_ITERS": 15,
   "CTS_APPLY_NDR": "none",
