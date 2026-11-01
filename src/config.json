@@ -50,6 +50,8 @@
   "CTS_CORNERS": ["max_ss_125C_3v00", "nom_tt_025C_3v30", "min_ff_n40C_3v60"],
   "RUN_POST_GRT_DESIGN_REPAIR": 1,
   "RUN_POST_GRT_RESIZER_TIMING": 1,
+  "GPL_CELL_PADDING": 1,
+  "DPL_CELL_PADDING": 1,
 
   "//": "RUN_LINTER, LINTER_INCLUDE_PDK_MODELS - Disabling the linter is not recommended!",
   "RUN_LINTER": 1,
