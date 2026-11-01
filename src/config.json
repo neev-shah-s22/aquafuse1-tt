@@ -36,10 +36,10 @@
 
   "//": "Hold slack margin - Increase them in case you are getting hold violations.",
   "//": "ser14: hold margins of s6c1 (DR0110 gate is hold >= 0.10 ns in all nine corners); GRT_ADJUSTMENT 0 as in s6, which routed",
-  "PL_RESIZER_HOLD_SLACK_MARGIN": 0.4,
+  "PL_RESIZER_HOLD_SLACK_MARGIN": 0.1,
   "PL_RESIZER_SETUP_SLACK_MARGIN": 0,
   "GRT_RESIZER_SETUP_SLACK_MARGIN": 0,
-  "GRT_RESIZER_HOLD_SLACK_MARGIN": 0.3,
+  "GRT_RESIZER_HOLD_SLACK_MARGIN": 0.05,
   "GRT_ADJUSTMENT": 0.0,
   "GRT_OVERFLOW_ITERS": 15,
   "CTS_APPLY_NDR": "none",
