@@ -84,7 +84,8 @@
   "FP_IO_HLENGTH": 2,
   "FP_IO_VLENGTH": 2,
 
-  "FP_PDN_VPITCH": 38.87,
+  "//": "ser15-v4: Metal4 power stripes at twice the template pitch: each stripe blocks Metal4 tracks and drops via stacks through Metal2/3 on every row, where r1 shorted (precheck needs Metal4 power pins >= 0.8 um, not a pitch)",
+  "FP_PDN_VPITCH": 77.74,
 
   "//": "Clock",
   "RUN_CTS": 1,
