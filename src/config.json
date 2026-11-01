@@ -43,6 +43,8 @@
   "GRT_ADJUSTMENT": 0.0,
   "GRT_OVERFLOW_ITERS": 15,
   "CTS_APPLY_NDR": "none",
+  "//": "ser15-v10..12: no CTS latency-balancing delay buffers. v9 CTS inserted 1,206 (CTS-0036), ~70 ns on the u_b1.iqclk branch, giving -54.8 ns hold / -64 ns setup post-CTS, 6,495 hold buffers (+42% area) and DPL-0036",
+  "CTS_DELAY_BUFFER_DERATE_PCT": 0,
   "//": "ser15-m1: detailed routing may use Metal1 (pin access). r1 and s6 routed on Metal2-4 only (Metal1 0 um, Metal5 forbidden), shorts on Metal2 dominated",
   "DRT_MIN_LAYER": "Metal1",
   "//": "ser15-v7: original clock tree (s6c1's clkbuf_4/8 tree started DRT at 110k vs s6's 24.5k), plus electrical closure: multi-corner resizer/CTS, post-GRT repair and timing (s6: 11,811 slew at max_ss)",
