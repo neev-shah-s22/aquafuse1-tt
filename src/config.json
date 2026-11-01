@@ -47,6 +47,8 @@
   "CTS_DELAY_BUFFER_DERATE_PCT": 0,
   "//": "ser15-m1: detailed routing may use Metal1 (pin access). r1 and s6 routed on Metal2-4 only (Metal1 0 um, Metal5 forbidden), shorts on Metal2 dominated",
   "DRT_MIN_LAYER": "Metal1",
+  "//": "ser15-v20/21: synthesis for area (default AREA 0). Effective util 0.695; only 0.635 has routed (s6)",
+  "SYNTH_STRATEGY": "AREA 2",
   "//": "ser15-v17..19: multi-corner resizer + post-GRT repair/timing (s6 failed DR0110 in all 9 corners on single-corner repair). CTS_CORNERS left unset (all STA corners, max_ss read first) as in v11: 103 delay buffers; v10 CTS_CORNERS listed min_ff first and got 1,206",
   "RSZ_CORNERS": ["max_ss_125C_3v00", "nom_tt_025C_3v30", "min_ff_n40C_3v60"],
   "RUN_POST_GRT_DESIGN_REPAIR": 1,
