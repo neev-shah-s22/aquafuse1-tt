@@ -13,16 +13,15 @@
 if { [llength [info commands ::clock_tree_synthesis]] && ![llength [info commands ::aq_cts_orig]] } {
     rename ::clock_tree_synthesis ::aq_cts_orig
     proc ::clock_tree_synthesis { args } {
-        set skip {}
+        # net OBJECTS straight to the call set_cts_config -skip_nets makes, so bracketed names are never re-parsed as patterns
+        set seen [dict create]
         foreach c [get_cells -hierarchical *u_eb] {
             foreach p [get_pins -of_objects $c] {
-                set n [get_nets -of_objects $p]
-                if { [llength $n] } { lappend skip [get_full_name $n] }
+                foreach n [get_nets -of_objects $p] { dict set seen [get_full_name $n] $n }
             }
         }
-        set skip [lsort -unique $skip]
-        puts "\[INFO] aquafuse pnr.sdc: CTS skips [llength $skip] enable-buffer nets ([llength [get_cells -hierarchical *u_eb]] buffers); -no_insertion_delay -dont_use_dummy_load (DR019)"
-        if { [llength $skip] } { set_cts_config -skip_nets $skip }
+        dict for {name n} $seen { cts::set_skip_clock_nets [sta::sta_to_db_net $n] }
+        puts "\[INFO] aquafuse pnr.sdc: CTS skips [dict size $seen] enable-buffer nets ([llength [get_cells -hierarchical *u_eb]] buffers); -no_insertion_delay -dont_use_dummy_load (DR019)"
         uplevel 1 [list ::aq_cts_orig {*}$args -no_insertion_delay -dont_use_dummy_load]
     }
 }
