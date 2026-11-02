@@ -44,6 +44,8 @@
   "SETUP_VIOLATION_CORNERS": [""],
   "//": "ser18-b: ser16-g (RTL enable buffers, v25 CTS limits) + PnR SDC hook: CTS skips the enable-buffer nets, latency balancing and dummy loads off (DR013, DR019).",
   "PNR_SDC_FILE": "dir::pnr.sdc",
+  "//": "ser19-b: no delay cells as repair buffers. ser18-a max_ss setup -13.19 ns on g_t.u_t.tap -> best (172 ns path, 11 dly cells inserted as wire/max_cap buffers, ~55 ns); v25 +5.35 ns on the same logic (DR013 update 10).",
+  "EXTRA_EXCLUDED_CELLS": ["gf180mcu_fd_sc_mcu7t5v0__dly*"],
   "GRT_ADJUSTMENT": 0.0,
   "GRT_OVERFLOW_ITERS": 15,
   "CTS_APPLY_NDR": "none",
