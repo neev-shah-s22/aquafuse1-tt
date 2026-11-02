@@ -48,6 +48,12 @@
   "PNR_SDC_FILE": "dir::pnr.sdc",
   "//": "ser19-a3 (2 Nov, DR013 update 11): ser18-a + no delay cells as repair buffers (ss setup -13.19 ns), repair headroom 20/10 %, hold margins 0.15 (gate 0.10), CTS cap 0.18 pF slew 2.0 ns root clkbuf_8 clustering 60.",
   "EXTRA_EXCLUDED_CELLS": ["gf180mcu_fd_sc_mcu7t5v0__dly*"],
+  "//": "ser21-r3 (2 Nov, DR013 update 12): ser20-a3 CTS + LAYERS_RC as ser21-r1 (tech LEF caps x2.1 max / x1.85 nom / x1.65 min; the resizer/CTS wire estimate was 2.3x below RCX in ser20-a1). RCX/signoff unaffected.",
+  "LAYERS_RC": {
+    "max_*": {"Metal1": {"res": 0.3913043, "cap": 0.0001932}, "Metal2": {"res": 0.3214286, "cap": 0.0001764}, "Metal3": {"res": 0.3214286, "cap": 0.00016464}, "Metal4": {"res": 0.3214286, "cap": 0.00016288}},
+    "nom_*": {"Metal1": {"res": 0.3913043, "cap": 0.0001702}, "Metal2": {"res": 0.3214286, "cap": 0.0001554}, "Metal3": {"res": 0.3214286, "cap": 0.00014504}, "Metal4": {"res": 0.3214286, "cap": 0.00014349}},
+    "min_*": {"Metal1": {"res": 0.3913043, "cap": 0.0001518}, "Metal2": {"res": 0.3214286, "cap": 0.0001386}, "Metal3": {"res": 0.3214286, "cap": 0.00012936}, "Metal4": {"res": 0.3214286, "cap": 0.00012797}}
+  },
   "GRT_ADJUSTMENT": 0.0,
   "GRT_OVERFLOW_ITERS": 15,
   "CTS_APPLY_NDR": "none",
