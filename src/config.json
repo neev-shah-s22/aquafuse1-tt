@@ -49,10 +49,11 @@
   "//": "ser19-a1 (2 Nov, DR013 update 11): ser18-a + no delay cells as repair buffers (ss setup -13.19 ns), repair headroom 20/10 %, hold margins 0.15 (gate 0.10).",
   "EXTRA_EXCLUDED_CELLS": ["gf180mcu_fd_sc_mcu7t5v0__dly*"],
   "//": "ser21-r1 (2 Nov, DR013 update 12): the resizer/CTS wire estimate (tech LEF, set_wire_rc avg 0.064 fF/um) is 2.3x below RCX (0.147 nom / 0.169 max fF/um over 2.51 m in ser20-a1), so every repair met the limits on paper and missed them routed (15,463 slew pins at max_ss). Tech LEF caps scaled x2.1 max / x1.85 nom / x1.65 min (same-net GRT->RCX ratio 1.74/1.59/1.46 incl. pins); res = LEF. RCX/signoff unaffected.",
+  "//": "ser21-r2: milder scale x1.7 max / x1.55 nom / x1.4 min (less repair area and memory than r1).",
   "LAYERS_RC": {
-    "max_*": {"Metal1": {"res": 0.3913043, "cap": 0.0001932}, "Metal2": {"res": 0.3214286, "cap": 0.0001764}, "Metal3": {"res": 0.3214286, "cap": 0.00016464}, "Metal4": {"res": 0.3214286, "cap": 0.00016288}},
-    "nom_*": {"Metal1": {"res": 0.3913043, "cap": 0.0001702}, "Metal2": {"res": 0.3214286, "cap": 0.0001554}, "Metal3": {"res": 0.3214286, "cap": 0.00014504}, "Metal4": {"res": 0.3214286, "cap": 0.00014349}},
-    "min_*": {"Metal1": {"res": 0.3913043, "cap": 0.0001518}, "Metal2": {"res": 0.3214286, "cap": 0.0001386}, "Metal3": {"res": 0.3214286, "cap": 0.00012936}, "Metal4": {"res": 0.3214286, "cap": 0.00012797}}
+    "max_*": {"Metal1": {"res": 0.3913043, "cap": 0.0001564}, "Metal2": {"res": 0.3214286, "cap": 0.0001428}, "Metal3": {"res": 0.3214286, "cap": 0.00013328}, "Metal4": {"res": 0.3214286, "cap": 0.00013185}},
+    "nom_*": {"Metal1": {"res": 0.3913043, "cap": 0.0001426}, "Metal2": {"res": 0.3214286, "cap": 0.0001302}, "Metal3": {"res": 0.3214286, "cap": 0.00012152}, "Metal4": {"res": 0.3214286, "cap": 0.00012022}},
+    "min_*": {"Metal1": {"res": 0.3913043, "cap": 0.0001288}, "Metal2": {"res": 0.3214286, "cap": 0.0001176}, "Metal3": {"res": 0.3214286, "cap": 0.00010976}, "Metal4": {"res": 0.3214286, "cap": 0.00010858}}
   },
   "GRT_ADJUSTMENT": 0.0,
   "GRT_OVERFLOW_ITERS": 15,
