@@ -27,8 +27,9 @@
   "PL_MAX_DISPLACEMENT_Y": 700,
   "DESIGN_REPAIR_MAX_SLEW_PCT": 0,
   "DESIGN_REPAIR_MAX_CAP_PCT": 0,
-  "GRT_DESIGN_REPAIR_MAX_SLEW_PCT": 0,
-  "GRT_DESIGN_REPAIR_MAX_CAP_PCT": 0,
+  "//": "ser21-r4: r1 + 10 % slew/cap headroom in the post-GRT repair only (the 20 % post-GPL margin OOM-killed ser19).",
+  "GRT_DESIGN_REPAIR_MAX_SLEW_PCT": 10,
+  "GRT_DESIGN_REPAIR_MAX_CAP_PCT": 10,
 
   "//": "CLOCK_PERIOD - Increase this in case you are getting setup time violations.",
   "//": "The value is in nanoseconds, so 20ns == 50MHz.",
