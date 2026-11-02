@@ -50,10 +50,11 @@
   "EXTRA_EXCLUDED_CELLS": ["gf180mcu_fd_sc_mcu7t5v0__dly*"],
   "//": "ser21-r1 (2 Nov, DR013 update 12): the resizer/CTS wire estimate (tech LEF, set_wire_rc avg 0.064 fF/um) is 2.3x below RCX (0.147 nom / 0.169 max fF/um over 2.51 m in ser20-a1), so every repair met the limits on paper and missed them routed (15,463 slew pins at max_ss). Tech LEF caps scaled x2.1 max / x1.85 nom / x1.65 min (same-net GRT->RCX ratio 1.74/1.59/1.46 incl. pins); res = LEF. RCX/signoff unaffected.",
   "//": "ser21-r2: milder scale x1.7 max / x1.55 nom / x1.4 min (less repair area and memory than r1).",
+  "//": "ser22-m1 (2 Nov ~7 AM PST, DR013 update 13): ser20-a3 (stronger CTS cells, same 1,368 clock buffers) never converged in detailed routing (16k-50k violations at iteration 49, cancelled at 6 h) while ser20-a1 converged at iteration 27, so routing is at the edge at 78.8 % utilization. Caps x1.35 max / x1.25 nom / x1.15 min: fewer repair buffers than r2/r6, still above the LEF estimate.",
   "LAYERS_RC": {
-    "max_*": {"Metal1": {"res": 0.3913043, "cap": 0.0001564}, "Metal2": {"res": 0.3214286, "cap": 0.0001428}, "Metal3": {"res": 0.3214286, "cap": 0.00013328}, "Metal4": {"res": 0.3214286, "cap": 0.00013185}},
-    "nom_*": {"Metal1": {"res": 0.3913043, "cap": 0.0001426}, "Metal2": {"res": 0.3214286, "cap": 0.0001302}, "Metal3": {"res": 0.3214286, "cap": 0.00012152}, "Metal4": {"res": 0.3214286, "cap": 0.00012022}},
-    "min_*": {"Metal1": {"res": 0.3913043, "cap": 0.0001288}, "Metal2": {"res": 0.3214286, "cap": 0.0001176}, "Metal3": {"res": 0.3214286, "cap": 0.00010976}, "Metal4": {"res": 0.3214286, "cap": 0.00010858}}
+    "max_*": {"Metal1": {"res": 0.3913043, "cap": 0.0001242}, "Metal2": {"res": 0.3214286, "cap": 0.0001134}, "Metal3": {"res": 0.3214286, "cap": 0.00010584}, "Metal4": {"res": 0.3214286, "cap": 0.000104706}},
+    "nom_*": {"Metal1": {"res": 0.3913043, "cap": 0.000115}, "Metal2": {"res": 0.3214286, "cap": 0.000105}, "Metal3": {"res": 0.3214286, "cap": 0.000098}, "Metal4": {"res": 0.3214286, "cap": 0.00009695}},
+    "min_*": {"Metal1": {"res": 0.3913043, "cap": 0.0001058}, "Metal2": {"res": 0.3214286, "cap": 0.0000966}, "Metal3": {"res": 0.3214286, "cap": 0.00009016}, "Metal4": {"res": 0.3214286, "cap": 0.000089194}}
   },
   "GRT_ADJUSTMENT": 0.0,
   "GRT_OVERFLOW_ITERS": 15,
