@@ -54,14 +54,14 @@ if { [info exists ::env(STEP_DIR)] && [regexp -nocase {(repairdesign|resizertimi
     set_max_capacitance 0.25 [current_design]
     puts "\[INFO] aquafuse pnr.sdc: repair limits 6.0 ns / 0.25 pF in [file tail $::env(STEP_DIR)] (DR0110 Tier 2)"
 }
-# gf-C-ser25-f8 (3 Nov ~1:50 AM PST, DR013 update 19): the latch-enable pins over 3.0 ns are H-tree leaves of the ~340
+# gf-C-ser25-f8/f6 (3 Nov ~1:50 AM PST, DR013 update 19): the latch-enable pins over 3.0 ns are H-tree leaves of the ~340
 # gated clocks. TritonCTS sink clustering only runs on nets with > 200 sinks (HTreeBuilder min_clustering_sinks_), and
 # ours have <= 80, so CTS_SINK_CLUSTERING_SIZE/_MAX_DIAMETER never act (ser25-c3 netlist = ser24-t5, md5 8da091c1). The
 # H-tree stops at 15 sinks per leaf (CtsOptions numMaxLeafSinks_) unless the design or buffer max_fanout is lower
 # (TritonCTS::setupCharacterization), so the CTS step alone gets a lower design fanout limit; other steps keep 100.
 if { [info exists ::env(STEP_DIR)] && [regexp -nocase {openroad-cts$} [file tail $::env(STEP_DIR)]] } {
-    set_max_fanout 8 [current_design]
-    puts "\[INFO] aquafuse pnr.sdc: CTS leaf fanout 8 in [file tail $::env(STEP_DIR)] (DR013 update 19)"
+    set_max_fanout 6 [current_design]
+    puts "\[INFO] aquafuse pnr.sdc: CTS leaf fanout 6 in [file tail $::env(STEP_DIR)] (DR013 update 19)"
 }
 
 set clk_input [get_port $clock_port]
