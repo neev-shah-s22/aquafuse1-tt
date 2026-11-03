@@ -45,6 +45,15 @@ if { [info exists ::env(MAX_TRANSITION_CONSTRAINT)] } {
 if { [info exists ::env(MAX_CAPACITANCE_CONSTRAINT)] } {
     set_max_capacitance $::env(MAX_CAPACITANCE_CONSTRAINT) [current_design]
 } 
+# gf-C-ser24-t1 (2 Nov ~6 PM PST, DR013 update 17): DR0110 Tier 2 (owner, 27 Oct) blocks on each pin's own Liberty limit with >= 10 %
+# headroom (GF180 7t: max_transition 15.6 ns per pin, per-cell max_capacitance). Repairing every net to the 3 ns / 0.2 pF
+# design target needs ~1,000+ more buffers than the 78.8 %-full 4x4 core routes (ser21/ser22/ser23-g2..g6). So the
+# repair steps only use the limits below; CTS and signoff STA keep 3 ns / 0.2 pF, which stay published as design targets.
+if { [info exists ::env(STEP_DIR)] && [regexp -nocase {(repairdesign|resizertiming)} [file tail $::env(STEP_DIR)]] } {
+    set_max_transition 8.0 [current_design]
+    set_max_capacitance 0.3 [current_design]
+    puts "\[INFO] aquafuse pnr.sdc: repair limits 8.0 ns / 0.3 pF in [file tail $::env(STEP_DIR)] (DR0110 Tier 2)"
+}
 
 set clk_input [get_port $clock_port]
 set clk_indx [lsearch [all_inputs] $clk_input]
