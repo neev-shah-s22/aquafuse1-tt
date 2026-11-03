@@ -1,7 +1,7 @@
 # Tiny Tapeout project information
 project:
   title:        "AquaFuse-1: fish-presence wake gate"
-  author:       "iexistforvrc"
+  author:       "neev-shah-s22"
   discord:      ""
   description:  "Sensor-direct always-on fish-presence wake gate: streaming INT8 CNN with a background model and a temporal head, no companion chip"
   language:     "SystemVerilog"

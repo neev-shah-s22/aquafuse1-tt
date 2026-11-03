@@ -3,6 +3,9 @@
 Written 18 October 2026 alongside the project repository's `docs/TAPEOUT_RELEASE_2026-10-18.md`, which is the
 master checklist. This copy travels with the submission.
 
+> **GF180 note (2 Nov 2026).** This file was written for the SKY130 8x4 submission and is kept as written. The
+> submission is now GF180MCU on TTGF26c at 4x4 (see `README.md`); the SKY130 tile and slot items below no longer apply.
+
 ## What this repository is
 
 `src/` is a byte-identical copy of the RTL that the project hardened and verified: ROMs and header generated from the
