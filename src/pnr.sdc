@@ -15,6 +15,36 @@ if { [llength [info commands ::clock_tree_synthesis]] && ![llength [info command
     }
 }
 
+set ::aq_gating_hold_margin 2.0
+
+# ser28 (4 Nov, DR013 update 19). t5's routed hold failures (-0.97 ns max_tt, -1.43 ns max_ss) are falling clock-gating
+# checks on the clk root tree: the post-GRT hold repair met them at +0.26 ns on estimated RC and routed RC moved them
+# ~1.7 ns. Only the post-GRT hold repair (the repair_timing call whose -hold_margin is GRT_RESIZER_HOLD_SLACK_MARGIN) sees
+# an extra clock-gating hold margin of ::aq_gating_hold_margin; the post-CTS repair (PL margin) passes through untouched,
+# so placement through GRT stays t5's. Signoff STA reads the base SDC, not this file, and is unchanged.
+if { [llength [info commands ::repair_timing]] && ![llength [info commands ::aq_rt_orig]] } {
+    rename ::repair_timing ::aq_rt_orig
+    proc ::repair_timing { args } {
+        set post_grt 0
+        catch {
+            set i [lsearch -exact $args -hold_margin]
+            if { $i >= 0 && [info exists ::env(GRT_RESIZER_HOLD_SLACK_MARGIN)]
+                 && abs([lindex $args [expr {$i + 1}]] - $::env(GRT_RESIZER_HOLD_SLACK_MARGIN)) < 1e-6 } {
+                set post_grt 1
+            }
+        }
+        if { !$post_grt } {
+            puts "\[INFO] aquafuse pnr.sdc: repair_timing passed through (not the post-GRT hold repair)"
+            return [uplevel 1 [list ::aq_rt_orig {*}$args]]
+        }
+        puts "\[INFO] aquafuse pnr.sdc: post-GRT repair_timing with clock-gating hold margin $::aq_gating_hold_margin ns"
+        set_clock_gating_check -hold $::aq_gating_hold_margin
+        set rc [catch { uplevel 1 [list ::aq_rt_orig {*}$args] } res opts]
+        set_clock_gating_check -hold 0
+        return -options $opts $res
+    }
+}
+
 set clock_port __VIRTUAL_CLK__
 if { [info exists ::env(CLOCK_PORT)] } {
     set port_count [llength $::env(CLOCK_PORT)]
