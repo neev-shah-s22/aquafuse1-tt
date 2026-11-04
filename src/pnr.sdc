@@ -7,12 +7,129 @@
 # (read_current_odb -> read_sdc, a Tcl source) before it calls clock_tree_synthesis, so the command is wrapped here.
 # Steps without CTS (no clock_tree_synthesis command) are untouched. Skew left unbalanced is a hold question for the
 # resizer's data-path repair and the DR0110 audit, not a function change.
+#
+# CONTROL-PIN SLEW (gf-C-ser25-u*, 3 Nov 2026, DR013 update 19). Under the update 18 rule every clock, latch-enable, ICG
+# and reset pin must stay <= 3.0 ns routed in every corner. ser24-t5 (this branch's base) misses at max_ss on 6,188 pins,
+# all driven by clkbuf_2 CTS buffers, clock-gating gates or reset buffers. Neither the CTS knobs (clustering never runs on
+# these <= 80-sink nets) nor all-larger clock buffers (ser24-t6, +50,900 um2, unroutable) fix it. The same pre-CTS netlist
+# rebuilds the same tree (ser25-c3 = ser24-t5, md5 8da091c1), so the drivers to enlarge were chosen from ser24-t5's routed
+# max_ss slews (scripts/vps/gf_slew_dump.sh + s112_cts_upsize.py, target AQ_RESIZE_TARGET below) and are applied right
+# after clock_tree_synthesis: "swap" changes a cell's master within its family; "insert" puts a clock buffer at a
+# clock-gating gate's output. The CTS step then legalizes (detailed_placement) as usual.
+proc ::aq_cts_resize_apply {} {
+    if { ![info exists ::aq_cts_resize] } { return }
+    set block [ord::get_db_block]
+    set db [ord::get_db]
+    set byname [dict create]
+    foreach inst [$block getInsts] { dict set byname [string map {\\ {}} [$inst getName]] $inst }
+    set nswap 0
+    set nins 0
+    set missing {}
+    foreach line [split [string trim $::aq_cts_resize] "\n"] {
+        set op [lindex $line 0]
+        set name [lindex $line 1]
+        if { ![dict exists $byname $name] } { lappend missing $name; continue }
+        set inst [dict get $byname $name]
+        set master [$db findMaster [lindex $line end]]
+        if { $master eq "NULL" || $master eq "" } { error "aquafuse pnr.sdc: no master [lindex $line end]" }
+        if { $op eq "swap" } {
+            if { ![$inst swapMaster $master] } { error "aquafuse pnr.sdc: swapMaster failed on $name" }
+            incr nswap
+        } elseif { $op eq "insert" } {
+            set it [$inst findITerm [lindex $line 2]]
+            set net [$it getNet]
+            incr nins
+            set mid [odb::dbNet_create $block "aq_ctsroot_net_$nins"]
+            set buf [odb::dbInst_create $block $master "aq_ctsroot_buf_$nins"]
+            $it disconnect
+            $it connect $mid
+            [$buf findITerm I] connect $mid
+            [$buf findITerm Z] connect $net
+            set loc [$inst getLocation]
+            $buf setLocation [lindex $loc 0] [lindex $loc 1]
+            $buf setPlacementStatus PLACED
+        } else {
+            error "aquafuse pnr.sdc: bad resize line: $line"
+        }
+    }
+    puts "\[INFO] aquafuse pnr.sdc: CTS resize target $::aq_resize_target ns: $nswap swapped, $nins buffers inserted,\
+          [llength $missing] not present at CTS: $missing (DR013 update 19)"
+    if { [llength $missing] > 8 } { error "aquafuse pnr.sdc: resize list does not match this layout" }
+}
 if { [llength [info commands ::clock_tree_synthesis]] && ![llength [info commands ::aq_cts_orig]] } {
     rename ::clock_tree_synthesis ::aq_cts_orig
     proc ::clock_tree_synthesis { args } {
         puts "\[INFO] aquafuse pnr.sdc: clock_tree_synthesis -no_insertion_delay -dont_use_dummy_load (DR019)"
-        uplevel 1 [list ::aq_cts_orig {*}$args -no_insertion_delay -dont_use_dummy_load]
+        set r [uplevel 1 [list ::aq_cts_orig {*}$args -no_insertion_delay -dont_use_dummy_load]]
+        ::aq_cts_resize_apply
+        return $r
     }
+}
+# ser26 (3 Nov ~8:45 PM PST): u20/u24 (866-965 swaps) applied cleanly but doubled the CTS-step legalization displacement
+# (avg 1.3 -> 2.7 um, HPWL +6-10 %) and did not route in 6 h. This list sizes only pins whose t5 max_ss slew is over 6.0 ns (ser27-w60: smallest change; ser26 showed t5 routes at the edge).
+set ::aq_resize_target 6.0
+# 60 swaps, 0 inserts: s112_cts_upsize.py --target 6.0 on ser24-t5's routed max_ss_125C_3v00 (VPS vps-074593ae)
+set ::aq_cts_resize {
+swap _16800_ gf180mcu_fd_sc_mcu7t5v0__nor3_4
+swap _16978_ gf180mcu_fd_sc_mcu7t5v0__nor2_2
+swap _16992_ gf180mcu_fd_sc_mcu7t5v0__nor2_2
+swap _16994_ gf180mcu_fd_sc_mcu7t5v0__nor2_2
+swap _17029_ gf180mcu_fd_sc_mcu7t5v0__nor2_2
+swap _17039_ gf180mcu_fd_sc_mcu7t5v0__nor2_2
+swap _17046_ gf180mcu_fd_sc_mcu7t5v0__nor2_2
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[0].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[11].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[13].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[14].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[17].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[1].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[22].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[23].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[24].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[27].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[28].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_4
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[2].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[32].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[33].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[35].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[36].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[37].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[38].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[39].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[3].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[40].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[41].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[45].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[46].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[50].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[51].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[52].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[54].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[55].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[58].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[59].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[5].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[60].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[63].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[64].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[65].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[66].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[67].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[68].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[70].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[74].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[75].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[7].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[80].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[8].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_u_stem.g_col[1].u_lat.en gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_0_u_stem.g_col[3].u_lat.en gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_2_0__f_clk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_2_0__f_genblk1.g_bg_cell.u_bg.g_ent[74].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_2_1__f_genblk1.g_bg_cell.u_bg.g_ent[60].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_2_2__f_clk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
+swap clkbuf_2_3__f_clk gf180mcu_fd_sc_mcu7t5v0__clkbuf_4
+swap clkbuf_2_3__f_genblk1.g_bg_cell.u_bg.g_ent[75].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3
 }
 
 set clock_port __VIRTUAL_CLK__
