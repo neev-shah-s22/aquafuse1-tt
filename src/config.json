@@ -28,7 +28,8 @@
   "PL_MAX_DISPLACEMENT_Y": 700,
   "DESIGN_REPAIR_MAX_SLEW_PCT": 15,
   "DESIGN_REPAIR_MAX_CAP_PCT": 15,
-  "GRT_DESIGN_REPAIR_MAX_SLEW_PCT": 15,
+  "//": "ser28 (4 Nov, DR013 update 19): post-GRT data repair to 50 % of each pin's max_transition (the update 18 data rule); steps before GRT unchanged from t5.",
+  "GRT_DESIGN_REPAIR_MAX_SLEW_PCT": 50,
   "GRT_DESIGN_REPAIR_MAX_CAP_PCT": 15,
 
   "//": "CLOCK_PERIOD - Increase this in case you are getting setup time violations.",
