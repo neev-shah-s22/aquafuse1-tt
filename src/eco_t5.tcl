@@ -1,9 +1,10 @@
-# AquaFuse t5 post-route ECO list (DR013 update 19, ser31-eco). Sourced by the DetailedRouting wrapper in src/pnr.sdc.
-# In-place swapMaster only: same pins, same nets, no new nets, no dly cells. 137 swaps = what-if round r5 on VPS
+# AquaFuse t5 post-route ECO list (DR013 update 19, ser34). Sourced by the DetailedRouting wrapper in src/pnr.sdc.
+# In-place swapMaster only: same pins, same nets, no new nets, no dly cells. 138 swaps = what-if round r11 on VPS
 # vps-074593ae (OpenSTA on t5's final netlist + final SDC + min/nom/max SPEF, 9 corners): every DR013 update 18 term met
-# (control judged at tt per owner 4 Nov), tightest hold +0.1023 ns at max_ff. Re-route RC is not in the what-if.
+# (control judged at tt per owner 4 Nov), tightest hold +0.1023 ns at max_ff. r11 = r5 + wire1600 buf_8->buf_2, which
+# frees the row space _17293_'s nor4_4 upsize needs (ser32 evicted _25381_ and died on DRT-1231 at its A2).
 set ::aq_eco_lists [dict create]
-# all: 137 swaps
+# all: 138 swaps
 dict set ::aq_eco_lists all [list \
     [list {_16800_} gf180mcu_fd_sc_mcu7t5v0__nor3_4] \
     [list {_16978_} gf180mcu_fd_sc_mcu7t5v0__nor2_2] \
@@ -142,4 +143,5 @@ dict set ::aq_eco_lists all [list \
     [list {clkbuf_1_0__f_u_b1.g_lane[5].aclk} gf180mcu_fd_sc_mcu7t5v0__clkbuf_4] \
     [list {clkbuf_2_2__f_u_b1.cclk} gf180mcu_fd_sc_mcu7t5v0__clkbuf_4] \
     [list {clkbuf_2_3__f_u_b1.cclk} gf180mcu_fd_sc_mcu7t5v0__clkbuf_4] \
+    [list {wire1600} gf180mcu_fd_sc_mcu7t5v0__buf_2] \
 ]
