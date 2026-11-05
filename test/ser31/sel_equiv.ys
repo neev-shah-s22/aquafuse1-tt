@@ -1,0 +1,12 @@
+# ser31: SAT proof that aquafuse_sel_gf == aquafuse_sel for every input (all words, every 7-/4-bit sel,
+# including sel >= N), for the bg store (91 x 36, 4 lanes) and the stem ports (13 x 80, 4 lanes).
+# Run from the repo root: yosys -q -s test/ser31/sel_equiv.ys   (VPS only)
+read_verilog -sv -DAQUAFUSE_GF180_ICG test/ser31/cells_func.v src/aquafuse_sel.sv test/ser31/sel_pair.sv
+hierarchy -check
+proc
+flatten
+opt_clean
+miter -equiv -flatten -make_assert sel_gold_bg sel_gate_bg miter_bg
+sat -verify -prove-asserts -show-ports miter_bg
+miter -equiv -flatten -make_assert sel_gold_stem sel_gate_stem miter_stem
+sat -verify -prove-asserts -show-ports miter_stem

@@ -79,6 +79,21 @@ module aquafuse_temporal_head #(
     logic [MW-1:0] wr_q;
     wire hclk;   // gated control clock, see u_hctl below
     always_ff @(posedge hclk) wr_q <= wr_narrow;
+`ifdef AQUAFUSE_GF180_ICG
+    // ser31: one explicit clock gate for the ring (aclk), the (slot, cell) decode as data (wsel), and one
+    // and2 per cell (aquafuse_lat_gf, one lane of MW latches). Same enable per latch.
+    wire           wg_aclk;
+    wire [K*N-1:0] wg_sel;
+    aquafuse_wgate_gf #(.NS(K), .NC(N)) u_wg (.clk(clk), .en(wr_en), .slot(wslot), .col(wr_idx),
+                                              .aclk(wg_aclk), .wsel(wg_sel));
+    for (genvar s = 0; s < K; s++) begin : g_slot
+        for (genvar c = 0; c < N; c++) begin : g_cell
+            logic [MW-1:0] word;
+            aquafuse_lat_gf #(.W(MW), .L(1)) u_lat (.aclk(wg_aclk), .wsel(wg_sel[s*N + c]), .d(wr_q), .q(word));
+            assign ring[(s*N + c)*MW +: MW] = word;
+        end
+    end
+`else
     wire [K*N-1:0] gclk_v;   // ENERGY: shared enable latch + decoded AND per cell (aquafuse_wgate)
     aquafuse_wgate #(.NS(K), .NC(N)) u_wg (.clk(clk), .en(wr_en), .slot(wslot), .col(wr_idx), .gclk(gclk_v));
     for (genvar s = 0; s < K; s++) begin : g_slot
@@ -89,6 +104,7 @@ module aquafuse_temporal_head #(
             assign ring[(s*N + c)*MW +: MW] = word;
         end
     end
+`endif
 
     // ---- the sequential convolution ------------------------------------------
     typedef enum logic [1:0] {IDLE, RUN, FIN} st_t;

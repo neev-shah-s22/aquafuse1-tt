@@ -140,6 +140,21 @@ module aquafuse_conv_stage #(
     wire iqclk;
     aquafuse_icg u_iq (.clk(clk), .en(in_valid), .gclk(iqclk));
     always_ff @(posedge iqclk) in_q <= in7;
+`ifdef AQUAFUSE_GF180_ICG
+    // ser31: one explicit clock gate for the row store (aclk), the (slot, col) decode as data (wsel), and
+    // one and2 per word and input channel (aquafuse_lat_gf, IN_CH lanes of 7 latches). Same enable per latch.
+    wire                 wg_aclk;
+    wire [ROWS*IN_W-1:0] wg_sel;
+    aquafuse_wgate_gf #(.NS(ROWS), .NC(IN_W)) u_wg (.clk(clk), .en(in_valid), .slot(wr_slot), .col(in_col),
+                                                    .aclk(wg_aclk), .wsel(wg_sel));
+    for (genvar s = 0; s < ROWS; s++) begin : g_slot
+        for (genvar c = 0; c < IN_W; c++) begin : g_col
+            logic [WB-1:0] word;
+            aquafuse_lat_gf #(.W(WB), .L(IN_CH)) u_lat (.aclk(wg_aclk), .wsel(wg_sel[s*IN_W + c]), .d(in_q), .q(word));
+            assign rowmem[(s*IN_W + c)*WB +: WB] = word;
+        end
+    end
+`else
     wire [ROWS*IN_W-1:0] gclk_v;   // ENERGY: shared enable latch + decoded AND per word (aquafuse_wgate)
     aquafuse_wgate #(.NS(ROWS), .NC(IN_W)) u_wg (.clk(clk), .en(in_valid), .slot(wr_slot), .col(in_col), .gclk(gclk_v));
     for (genvar s = 0; s < ROWS; s++) begin : g_slot
@@ -150,6 +165,7 @@ module aquafuse_conv_stage #(
             assign rowmem[(s*IN_W + c)*WB +: WB] = word;
         end
     end
+`endif
 
     // ---- emit trigger -----------------------------------------------------
     // Output row orow is ready once input row STRIDE*orow+1 has landed (or the

@@ -79,8 +79,15 @@ module aquafuse_stem_accum #(
     // flat view for the one-hot read ports (aquafuse_sel), GF180 area
     wire [OUT_W*COUT*ACC_W-1:0] acc_flat;
     wire [COUT*ACC_W-1:0] rd_mac_raw, rd_out_raw, rd_mac_word, rd_out_word;
+`ifdef AQUAFUSE_GF180_ICG
+    // ser31: the same two read ports with their one-hot selects replicated per lane (aquafuse_sel_gf):
+    // 13 select lines at fanout 80 per port become 4 x 13 at fanout 20
+    aquafuse_sel_gf #(.N(OUT_W), .W(COUT*ACC_W), .L(COUT)) u_rd_mac (.words(acc_flat), .sel(mac_col), .y(rd_mac_raw));
+    aquafuse_sel_gf #(.N(OUT_W), .W(COUT*ACC_W), .L(COUT)) u_rd_out (.words(acc_flat), .sel(rd_col),  .y(rd_out_raw));
+`else
     aquafuse_sel #(.N(OUT_W), .W(COUT*ACC_W)) u_rd_mac (.words(acc_flat), .sel(mac_col), .y(rd_mac_raw));
     aquafuse_sel #(.N(OUT_W), .W(COUT*ACC_W)) u_rd_out (.words(acc_flat), .sel(rd_col),  .y(rd_out_raw));
+`endif
 
     // LIVE FLAGS (GF180 area, ser14). A column whose live bit is 0 reads as zero whatever its
     // latches hold, so a clear is one flag flop instead of a write of COUT*ACC_W bits. That is
@@ -175,12 +182,25 @@ module aquafuse_stem_accum #(
     wire sclk;
     aquafuse_icg u_scg (.clk(clk), .en(mac_en), .gclk(sclk));
     always_ff @(posedge sclk) stage_q <= acc_next_word;
+`ifdef AQUAFUSE_GF180_ICG
+    // ser31: one explicit clock gate for the accumulator row (aclk), the column decode as data (wsel), and
+    // one and2 per column and lane (aquafuse_lat_gf, COUT lanes of ACC_W latches). Same enable per latch.
+    wire             wg_aclk;
+    wire [OUT_W-1:0] wg_sel;
+    aquafuse_wgate_gf #(.NS(1), .NC(OUT_W)) u_wg (.clk(clk), .en(mac_en), .slot(1'b0), .col(mac_col),
+                                                  .aclk(wg_aclk), .wsel(wg_sel));
+    for (genvar p = 0; p < OUT_W; p++) begin : g_col
+        aquafuse_lat_gf #(.W(COUT*ACC_W), .L(COUT)) u_lat (.aclk(wg_aclk), .wsel(wg_sel[p]), .d(stage_q),
+                                                           .q(acc_flat[p*COUT*ACC_W +: COUT*ACC_W]));
+    end
+`else
     wire [OUT_W-1:0] gclk_v;
     aquafuse_wgate #(.NS(1), .NC(OUT_W)) u_wg (.clk(clk), .en(mac_en), .slot(1'b0), .col(mac_col), .gclk(gclk_v));
     for (genvar p = 0; p < OUT_W; p++) begin : g_col
         aquafuse_lat #(.W(COUT*ACC_W)) u_lat (.en(gclk_v[p]), .d(stage_q),
                                               .q(acc_flat[p*COUT*ACC_W +: COUT*ACC_W]));
     end
+`endif
 
     // Readout is split so the column select is a CONTINUOUS assign and the
     // requantisation is a per-lane assign. Doing the variable index inside an

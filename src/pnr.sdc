@@ -7,10 +7,30 @@
 # (read_current_odb -> read_sdc, a Tcl source) before it calls clock_tree_synthesis, so the command is wrapped here.
 # Steps without CTS (no clock_tree_synthesis command) are untouched. Skew left unbalanced is a hold question for the
 # resizer's data-path repair and the DR0110 audit, not a function change.
+# ser31 (DR013, idea 2): the storage arrays' write clocks are now one explicit gate per array (aclk, u_ag) and one
+# and2 per word and lane (aquafuse_lat_gf u_lg) that drives that lane's 7-20 latch E pins. CTS still builds the
+# root clk tree and one tree per aclk (the u_lg A1 pins are its sinks), but is told to SKIP each u_lg OUTPUT net, so
+# no clkbuf goes below a lane gate (t5 spent 1,089 clkbuf_2 on word trees and 123 on folded-decode trees). Only
+# output pins are taken: the input nets are aclk (which must get its tree) and wsel (data). The mechanism is
+# ser18-b's (cts::set_skip_clock_nets on net objects, "CTS skips 567 enable-buffer nets"). Expected count: 824
+# (bg 91x4, stem 13x4, b1 39x4, b2 28x6, temporal head 84x1).
 if { [llength [info commands ::clock_tree_synthesis]] && ![llength [info commands ::aq_cts_orig]] } {
     rename ::clock_tree_synthesis ::aq_cts_orig
     proc ::clock_tree_synthesis { args } {
-        puts "\[INFO] aquafuse pnr.sdc: clock_tree_synthesis -no_insertion_delay -dont_use_dummy_load (DR019)"
+        # net OBJECTS straight to the call set_cts_config -skip_nets makes, so bracketed names are never re-parsed as patterns
+        set seen [dict create]
+        set gates [get_cells -hierarchical *u_lg]
+        foreach c $gates {
+            foreach p [get_pins -of_objects $c] {
+                if { [get_property $p direction] ne "output" } { continue }
+                foreach n [get_nets -of_objects $p] { dict set seen [get_full_name $n] $n }
+            }
+        }
+        dict for {name n} $seen { cts::set_skip_clock_nets [sta::sta_to_db_net $n] }
+        puts "\[INFO] aquafuse pnr.sdc: CTS skips [dict size $seen] lane-gate nets ([llength $gates] u_lg gates, ser31 expects 824); -no_insertion_delay -dont_use_dummy_load (DR019)"
+        if { [dict size $seen] != [llength $gates] } {
+            puts "\[WARNING] aquafuse pnr.sdc: lane-gate nets ([dict size $seen]) != lane gates ([llength $gates])"
+        }
         uplevel 1 [list ::aq_cts_orig {*}$args -no_insertion_delay -dont_use_dummy_load]
     }
 }

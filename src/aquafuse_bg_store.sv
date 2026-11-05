@@ -60,7 +60,12 @@ module aquafuse_bg_store #(
     // the read port: the entry at `addr`, through a balanced tree (aquafuse_sel;
     // a loop of `if (addr == i)` is a 91-deep priority chain, r5)
     logic [WD-1:0] rd_word;
+`ifdef AQUAFUSE_GF180_ICG
+    // ser31: the same read port with its one-hot select replicated per lane (aquafuse_sel_gf)
+    aquafuse_sel_gf #(.N(ENTRIES), .W(WD), .L(COUT)) u_rd (.words(mem), .sel(addr), .y(rd_word));
+`else
     aquafuse_sel #(.N(ENTRIES), .W(WD)) u_rd (.words(mem), .sel(addr), .y(rd_word));
+`endif
 
     logic signed [W-1:0]  cur [COUT-1:0];
     logic signed [W-1:0]  upd [COUT-1:0];
@@ -95,6 +100,19 @@ module aquafuse_bg_store #(
     always_ff @(posedge uclk) upd_q <= upd_word;
     // ENERGY: one shared enable/index latch + a decoded AND per entry (aquafuse_wgate) instead
     // of one clock gate per entry; the gates cost clock-pin power every cycle.
+`ifdef AQUAFUSE_GF180_ICG
+    // ser31: one explicit clock gate for the store (aclk) and the entry decode as data (wsel); each entry's
+    // COUT lanes get their own and2 of the two (aquafuse_lat_gf). Same enable per latch as below.
+    wire               wg_aclk;
+    wire [ENTRIES-1:0] wg_sel;
+    aquafuse_wgate_gf #(.NS(1), .NC(ENTRIES)) u_wg (.clk(clk), .en(rd_en), .slot(1'b0), .col(addr),
+                                                    .aclk(wg_aclk), .wsel(wg_sel));
+    for (genvar e = 0; e < ENTRIES; e++) begin : g_ent
+        logic [WD-1:0] word;
+        aquafuse_lat_gf #(.W(WD), .L(COUT)) u_lat (.aclk(wg_aclk), .wsel(wg_sel[e]), .d(upd_q), .q(word));
+        assign mem[e*WD +: WD] = word;
+    end
+`else
     wire [ENTRIES-1:0] gclk_v;
     aquafuse_wgate #(.NS(1), .NC(ENTRIES)) u_wg (.clk(clk), .en(rd_en), .slot(1'b0), .col(addr), .gclk(gclk_v));
     for (genvar e = 0; e < ENTRIES; e++) begin : g_ent
@@ -109,6 +127,7 @@ module aquafuse_bg_store #(
         aquafuse_lat #(.W(WD)) u_lat (.en(gclk), .d(upd_q), .q(word));
         assign mem[e*WD +: WD] = word;
     end
+`endif
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n)
             seeded <= 1'b0;
