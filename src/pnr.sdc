@@ -15,6 +15,66 @@ if { [llength [info commands ::clock_tree_synthesis]] && ![llength [info command
     }
 }
 
+# ser36 (5 Nov, DR013 update 19, IDEAS2.md idea 2): ECO-ready draw. Every post-route ECO on t5 failed for room: its 138
+# upsizes sit in 91 %-full latch-array rows, so legalization moved ~1,400 cells and the re-route never converged (ECO
+# lab 1-3). Here every detailed_placement first gives the cells that ECO upsizes free sites on their right
+# (dpl::set_padding_inst, held in DPL's memory only, hence re-applied in every step). The routed layout then keeps those
+# sites empty, and a post-route swap can grow into them in place, the way the DRT antenna diodes did.
+#   ::aq_pad_names   instance -> sites (src/eco_pad_names.tcl: r11's width delta per upsized cell)
+#   ::aq_pad_root    sites for every gated-clock root clkbuf_0_* (r11 grows 71 of the 340 by 5-6 sites)
+#   ::aq_pad_driver  sites for the cell driving each root's input (the word gating gate)
+#   ::aq_pad_leaf    sites for every clkbuf_<n>_<m>__f_* leaf buffer
+if { ![info exists ::aq_pad_root] } { set ::aq_pad_root 6 }
+if { ![info exists ::aq_pad_driver] } { set ::aq_pad_driver 4 }
+if { ![info exists ::aq_pad_leaf] } { set ::aq_pad_leaf 0 }
+if { [llength [info commands ::detailed_placement]] && ![llength [info commands ::aq_dpl_orig]]
+     && [llength [info commands ::dpl::set_padding_inst]] && [info exists ::env(_SDC_IN)] } {
+    set ::aq_pad_file [file join [file dirname $::env(_SDC_IN)] eco_pad_names.tcl]
+    if { [file exists $::aq_pad_file] } { source $::aq_pad_file } else { set ::aq_pad_names [dict create] }
+    proc ::aq_pad_apply {} {
+        set block [ord::get_db_block]
+        set pad [dict create]
+        foreach inst [$block getInsts] {
+            set name [string map {\\ {}} [$inst getName]]
+            set p 0
+            if { [dict exists $::aq_pad_names $name] } { set p [dict get $::aq_pad_names $name] }
+            if { [string match {clkbuf_0_*} $name] } {
+                set p [expr { max($p, $::aq_pad_root) }]
+                set it [$inst findITerm I]
+                if { $it ne "NULL" && $it ne "" && [$it getNet] ne "NULL" } {
+                    foreach d [[$it getNet] getITerms] {
+                        if { [$d isOutputSignal] } {
+                            set dn [$d getInst]
+                            set q [expr { [dict exists $pad $dn] ? [lindex [dict get $pad $dn] 1] : 0 }]
+                            dict set pad $dn [list $dn [expr { max($q, $::aq_pad_driver) }]]
+                        }
+                    }
+                }
+            } elseif { [regexp {^clkbuf_[0-9]+_[0-9]+__f_} $name] } {
+                set p [expr { max($p, $::aq_pad_leaf) }]
+            }
+            if { $p > 0 } {
+                set q [expr { [dict exists $pad $inst] ? [lindex [dict get $pad $inst] 1] : 0 }]
+                dict set pad $inst [list $inst [expr { max($p, $q) }]]
+            }
+        }
+        set sites 0
+        dict for {k v} $pad {
+            lassign $v inst p
+            if { [[$inst getMaster] isFiller] || [$inst isFixed] } { continue }
+            dpl::set_padding_inst $inst 0 $p
+            incr sites $p
+        }
+        puts "\[INFO] aquafuse pnr.sdc: ECO-ready padding on [dict size $pad] instances, $sites sites\
+              (root $::aq_pad_root, driver $::aq_pad_driver, leaf $::aq_pad_leaf; DR013 update 19)"
+    }
+    rename ::detailed_placement ::aq_dpl_orig
+    proc ::detailed_placement { args } {
+        ::aq_pad_apply
+        return [uplevel 1 [list ::aq_dpl_orig {*}$args]]
+    }
+}
+
 set clock_port __VIRTUAL_CLK__
 if { [info exists ::env(CLOCK_PORT)] } {
     set port_count [llength $::env(CLOCK_PORT)]
