@@ -31,7 +31,31 @@ if { [llength [info commands ::clock_tree_synthesis]] && ![llength [info command
         if { [dict size $seen] != [llength $gates] } {
             puts "\[WARNING] aquafuse pnr.sdc: lane-gate nets ([dict size $seen]) != lane gates ([llength $gates])"
         }
-        uplevel 1 [list ::aq_cts_orig {*}$args -no_insertion_delay -dont_use_dummy_load]
+        set r [uplevel 1 [list ::aq_cts_orig {*}$args -no_insertion_delay -dont_use_dummy_load]]
+        # ser31-rtl run 41956889726: CTS left exactly one aclk sink unconnected (u_b2.g_slot[2].g_col[4].u_lat.g_l[2].u_lg/A1,
+        # connected in 34-detailedplacement, gone in 35-cts) and the flow stopped at the disconnected-pins check. Any lane
+        # gate whose A1 CTS dropped is reconnected to the clock net of a sibling lane gate of the same word, found through
+        # the word-select net (A2) they share; it is the same aclk tree.
+        set fixed 0
+        foreach inst [[ord::get_db_block] getInsts] {
+            if { ![string match {*u_lg} [$inst getName]] } { continue }
+            set a1 [$inst findITerm A1]
+            set n1 [$a1 getNet]
+            if { $n1 ne "NULL" && $n1 ne "" } { continue }
+            set clk_net ""
+            foreach it [[[$inst findITerm A2] getNet] getITerms] {
+                set o [$it getInst]
+                if { [$o getName] eq [$inst getName] || ![string match {*u_lg} [$o getName]] } { continue }
+                set sn [[$o findITerm A1] getNet]
+                if { $sn ne "NULL" && $sn ne "" } { set clk_net $sn; break }
+            }
+            if { $clk_net eq "" } { error "aquafuse pnr.sdc: CTS left [$inst getName]/A1 unconnected and no sibling lane gate has a clock" }
+            if { [catch { $a1 connect $clk_net }] } { odb::dbITerm_connect $a1 $clk_net }
+            incr fixed
+            puts "\[WARNING] aquafuse pnr.sdc: CTS left [$inst getName]/A1 unconnected; reconnected to [$clk_net getName]"
+        }
+        puts "\[INFO] aquafuse pnr.sdc: post-CTS lane-gate clock check: $fixed reconnected"
+        return $r
     }
 }
 
