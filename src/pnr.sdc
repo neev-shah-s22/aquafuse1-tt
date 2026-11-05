@@ -15,6 +15,137 @@ if { [llength [info commands ::clock_tree_synthesis]] && ![llength [info command
     }
 }
 
+# ser31-eco (4 Nov, DR013 update 19): one stage holding the whole what-if-checked list (WHATIF.md).
+set ::aq_eco_stages {all}
+# ---------------------------------------------------------------------------------------------------------------------
+# AquaFuse post-route ECO (DR013 update 18 / IDEAS.md idea 1). INSERT INTO src/pnr.sdc of codex/gf-C-ser24-t5, anywhere
+# before the "set clock_port" line (next to the existing clock_tree_synthesis wrapper). Needs src/eco_t5.tcl beside it.
+#
+# WHY HERE. Every OpenROAD step sources this file (read_current_odb -> read_current_sdc -> read_sdc), including
+# OpenROAD.DetailedRouting (drt.tcl). drt.tcl defines drt_run, which calls `log_cmd detailed_route ...`; log_cmd runs
+# `$cmd {*}$args`, so a global proc named detailed_route replaces it. drt.tcl then runs the antenna loop, which calls
+# drt_run (so detailed_route) again on the routed database: t5's own log shows that re-route going 556 -> 0 violations in
+# 12 min after 11 diodes. This hook uses the same mechanism once, right after the first full route:
+#   1. original detailed_route (t5's route, unchanged);
+#   2. ONCE (::aq_eco_done): swapMaster from src/eco_t5.tcl (same pins, same nets, no new nets, so every route guide
+#      stays valid); global_connect for the new masters' power pins;
+#   3. legalize only what overlaps: detailed_placement with a small displacement (no optimize_mirroring, which would
+#      move cells that are already legal and routed), check_placement;
+#   4. rip up the wires of every net touching a swapped or moved instance, so TritonRoute reconnects their pins
+#      instead of leaving stale segments (guides are kept in the ODB from global routing);
+#   5. original detailed_route again, with the same arguments (same -output_drc file: the step's DRC report is the
+#      post-ECO one). drt.tcl's antenna loop and write_views follow as usual and see the post-ECO design.
+# Recursion: the wrapper calls ::aq_drt_orig (the renamed built-in) for both routes, never ::detailed_route, and the
+# ECO body is guarded by ::aq_eco_done, so the antenna loop's later drt_run calls are plain re-routes.
+# Steps other than DetailedRouting are untouched (STEP_DIR check), and plain OpenSTA steps have no detailed_route.
+# ---------------------------------------------------------------------------------------------------------------------
+if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq_drt_orig]]
+     && [info exists ::env(STEP_DIR)] && [regexp -nocase {detailedrouting} [file tail $::env(STEP_DIR)]] } {
+    set ::aq_eco_done 0
+    # _SDC_IN is this file's own path (read_current_sdc reads it); eco_t5.tcl sits beside it in src/.
+    set ::aq_eco_file [file join [file dirname $::env(_SDC_IN)] eco_t5.tcl]
+    if { ![file exists $::aq_eco_file] && [info exists ::env(DESIGN_DIR)] } {
+        set ::aq_eco_file [file join $::env(DESIGN_DIR) eco_t5.tcl]
+    }
+    # Stages to apply, in order. Drop a stage name to split a run (e.g. {hold} alone, then {hold control}).
+    if { ![info exists ::aq_eco_stages] } { set ::aq_eco_stages {hold control data} }
+    # Legalization window (um). Swaps widen a cell by 1-6 sites; neighbours should move a few sites at most.
+    if { ![info exists ::aq_eco_max_disp] } { set ::aq_eco_max_disp {30 8} }
+    # 1: delete the wires of nets on swapped/moved cells so TritonRoute reconnects them from their (kept) guides.
+    # 0: leave stale wires and rely on TritonRoute's incremental mode, as drt.tcl's own diode re-route does.
+    if { ![info exists ::aq_eco_ripup] } { set ::aq_eco_ripup 1 }
+
+    proc ::aq_eco_apply {} {
+        set block [ord::get_db_block]
+        set db [ord::get_db]
+        if { ![file exists $::aq_eco_file] } { error "aquafuse pnr.sdc: post-route ECO list $::aq_eco_file not found" }
+        source $::aq_eco_file          ;# defines ::aq_eco_lists: dict stage -> list of {inst master}
+        set byname [dict create]
+        foreach inst [$block getInsts] { dict set byname [string map {\\ {}} [$inst getName]] $inst }
+        # where everything sits before the ECO, to find what legalization moves
+        set before [dict create]
+        foreach inst [$block getInsts] { dict set before [$inst getName] [$inst getLocation] }
+        set touched [dict create]
+        set nswap 0
+        set missing {}
+        foreach stage $::aq_eco_stages {
+            if { ![dict exists $::aq_eco_lists $stage] } { continue }
+            set ns 0
+            foreach pair [dict get $::aq_eco_lists $stage] {
+                lassign $pair name mname
+                if { ![dict exists $byname $name] } { lappend missing $name; continue }
+                set inst [dict get $byname $name]
+                set master [$db findMaster $mname]
+                if { $master eq "NULL" || $master eq "" } { error "aquafuse pnr.sdc: no master $mname" }
+                if { [[$inst getMaster] getName] eq $mname } { continue }
+                if { ![$inst swapMaster $master] } { error "aquafuse pnr.sdc: swapMaster failed on $name -> $mname" }
+                dict set touched [$inst getName] 1
+                incr ns
+            }
+            puts "\[INFO] aquafuse pnr.sdc: post-route ECO stage $stage: $ns swaps"
+            incr nswap $ns
+        }
+        if { [llength $missing] > 0 } {
+            puts "\[WARNING] aquafuse pnr.sdc: post-route ECO: [llength $missing] instances not in this layout: [lrange $missing 0 20]"
+            if { [llength $missing] > 4 } { error "aquafuse pnr.sdc: ECO list does not match this layout (not t5's route?)" }
+        }
+        global_connect
+        log_cmd detailed_placement -max_displacement $::aq_eco_max_disp
+        check_placement -verbose
+        set nmoved 0
+        set disp 0.0
+        set dbu [[$db getTech] getDbUnitsPerMicron]
+        foreach inst [$block getInsts] {
+            set n [$inst getName]
+            if { ![dict exists $before $n] } { continue }
+            lassign [dict get $before $n] x0 y0
+            lassign [$inst getLocation] x1 y1
+            if { $x0 != $x1 || $y0 != $y1 } {
+                dict set touched $n 1
+                incr nmoved
+                set disp [expr {$disp + (abs($x1 - $x0) + abs($y1 - $y0)) / double($dbu)}]
+            }
+        }
+        # rip up the routing of every signal net on a swapped or moved instance (power nets are special nets, kept)
+        set ripped [dict create]
+        foreach n [expr { $::aq_eco_ripup ? [dict keys $touched] : {} }] {
+            set inst [$block findInst $n]
+            foreach it [$inst getITerms] {
+                set net [$it getNet]
+                if { $net eq "NULL" || $net eq "" } { continue }
+                if { [$net getSigType] in {POWER GROUND} || [$net isSpecial] } { continue }
+                set nn [$net getName]
+                if { [dict exists $ripped $nn] } { continue }
+                set w [$net getWire]
+                if { $w ne "NULL" && $w ne "" } { odb::dbWire_destroy $w }
+                dict set ripped $nn 1
+            }
+        }
+        puts "\[INFO] aquafuse pnr.sdc: post-route ECO: $nswap swaps (stages $::aq_eco_stages), $nmoved instances\
+              moved by legalization ([format %.1f $disp] um total), [dict size $ripped] nets ripped up for re-route\
+              (DR013 update 18, IDEAS.md idea 1)"
+        write_db $::env(STEP_DIR)/aquafuse_eco_pre_reroute.odb
+        return $nswap
+    }
+
+    rename ::detailed_route ::aq_drt_orig
+    proc ::detailed_route { args } {
+        set r [uplevel 1 [list ::aq_drt_orig {*}$args]]
+        if { !$::aq_eco_done } {
+            set ::aq_eco_done 1
+            puts "\[INFO] aquafuse pnr.sdc: first detailed route complete; applying post-route ECO from $::aq_eco_file"
+            set n [::aq_eco_apply]
+            if { $n > 0 } {
+                puts "\[INFO] aquafuse pnr.sdc: post-route ECO re-route ($n swaps)"
+                set r [uplevel 1 [list ::aq_drt_orig {*}$args]]
+            }
+        } else {
+            puts "\[INFO] aquafuse pnr.sdc: detailed_route passed through (ECO already applied)"
+        }
+        return $r
+    }
+}
+
 set clock_port __VIRTUAL_CLK__
 if { [info exists ::env(CLOCK_PORT)] } {
     set port_count [llength $::env(CLOCK_PORT)]
