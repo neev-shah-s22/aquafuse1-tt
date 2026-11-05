@@ -26,6 +26,8 @@ set ::aq_eco_max_disp {300 60}
 #   ::aq_eco_lock   instances held LOCKED while the ECO legalizes
 #   ::aq_eco_watch  instances whose master and location are logged before and after legalization
 #   ::aq_eco_moves  {inst x_dbu y_dbu orient} placed before legalization (src/eco_moves.tcl)
+#   ::aq_eco_regrt  none (default) | full (re-run global routing after the ECO) | incr (incremental global routing
+#                   around the ECO; falls back to full if OpenROAD refuses it in this process)
 if { [info exists ::env(_SDC_IN)] && [file exists [file join [file dirname $::env(_SDC_IN)] eco_variant.tcl]] } {
     source [file join [file dirname $::env(_SDC_IN)] eco_variant.tcl]
     puts "\[INFO] aquafuse pnr.sdc: ECO lab variant loaded"
@@ -69,6 +71,41 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
     if { ![info exists ::aq_eco_ripup] } { set ::aq_eco_ripup 1 }
 
     if { ![info exists ::aq_eco_mode] } { set ::aq_eco_mode post }
+    if { ![info exists ::aq_eco_regrt] } { set ::aq_eco_regrt none }
+    # ECO lab, 5 Nov: every ECO variant routed with t5's global-route guides, which predate the ~1,400 cells that
+    # legalization moves; all of them stalled near 5,000 violations and then diverged, where t5's own route reached 0.
+    # These re-make the guides with GlobalRouting's settings (common/grt.tcl). The DetailedRouting step's config has no
+    # GRT_* variables, so t5's resolved values are the fallback.
+    proc ::aq_eco_env { name default } {
+        if { [info exists ::env($name)] && $::env($name) ne "" } { return $::env($name) }
+        return $default
+    }
+    proc ::aq_eco_grt_preamble {} {
+        if { [info exists ::aq_eco_grt_ready] } { return }
+        set ::aq_eco_grt_ready 1
+        set lo [::aq_eco_env RT_MIN_LAYER Metal2]
+        set hi [::aq_eco_env RT_MAX_LAYER Metal4]
+        set clo [::aq_eco_env RT_CLOCK_MIN_LAYER $lo]
+        set chi [::aq_eco_env RT_CLOCK_MAX_LAYER $hi]
+        set_routing_layers -signal $lo-$hi -clock $clo-$chi
+        set_global_routing_layer_adjustment * [::aq_eco_env GRT_ADJUSTMENT 0]
+        set names {}
+        foreach layer [[[ord::get_db] getTech] getLayers] {
+            if { [$layer getRoutingLevel] >= 1 } { lappend names [$layer getName] }
+        }
+        set i 0
+        foreach adj [::aq_eco_env GRT_LAYER_ADJUSTMENTS {0 0.3 0.2 0 0}] {
+            set_global_routing_layer_adjustment [lindex $names $i] $adj
+            incr i
+        }
+        set_macro_extension [::aq_eco_env GRT_MACRO_EXTENSION 0]
+        puts "\[INFO] aquafuse pnr.sdc: ECO global-route settings: layers $lo-$hi, clock $clo-$chi"
+    }
+    proc ::aq_eco_grt_full {} {
+        ::aq_eco_grt_preamble
+        log_cmd global_route -congestion_iterations [::aq_eco_env GRT_OVERFLOW_ITERS 15] -verbose -allow_congestion
+        puts "\[INFO] aquafuse pnr.sdc: post-route ECO: global routing re-run (full) on the legalized placement"
+    }
     proc ::aq_eco_report_watch { tag } {
         if { ![info exists ::aq_eco_watch] } { return }
         set block [ord::get_db_block]
@@ -94,6 +131,15 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
         set touched [dict create]
         set nswap 0
         set missing {}
+        if { $::aq_eco_regrt eq "incr" } {
+            ::aq_eco_grt_preamble
+            if { [catch { global_route -start_incremental } err] } {
+                puts "\[WARNING] aquafuse pnr.sdc: incremental global routing unavailable ($err); using full"
+                set ::aq_eco_regrt full
+            } else {
+                puts "\[INFO] aquafuse pnr.sdc: incremental global routing started before the ECO"
+            }
+        }
         foreach stage $::aq_eco_stages {
             if { ![dict exists $::aq_eco_lists $stage] } { continue }
             set ns 0
@@ -197,6 +243,16 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
         puts "\[INFO] aquafuse pnr.sdc: post-route ECO: $nswap swaps (stages $::aq_eco_stages), $nmoved instances\
               moved by legalization ([format %.1f $disp] um total), [dict size $ripped] nets ripped up for re-route\
               (DR013 update 18, IDEAS.md idea 1)"
+        if { $::aq_eco_regrt eq "incr" } {
+            if { [catch { global_route -end_incremental -allow_congestion } err] } {
+                puts "\[WARNING] aquafuse pnr.sdc: incremental global routing failed to finish ($err); using full"
+                ::aq_eco_grt_full
+            } else {
+                puts "\[INFO] aquafuse pnr.sdc: post-route ECO: incremental global routing re-made the changed guides"
+            }
+        } elseif { $::aq_eco_regrt eq "full" } {
+            ::aq_eco_grt_full
+        }
         write_db $::env(STEP_DIR)/aquafuse_eco_pre_reroute.odb
         return $nswap
     }

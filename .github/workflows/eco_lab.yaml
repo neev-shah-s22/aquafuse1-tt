@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [repro, noripup, pre]
+        variant: [pre_regrt, pre_incgrt, post_incgrt]
     steps:
       - name: checkout repo
         uses: actions/checkout@v6
