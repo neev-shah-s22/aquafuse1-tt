@@ -26,7 +26,7 @@ if { [llength [info commands ::clock_tree_synthesis]] && ![llength [info command
 #   ::aq_pad_leaf    sites for every clkbuf_<n>_<m>__f_* leaf buffer
 if { ![info exists ::aq_pad_root] } { set ::aq_pad_root 6 }
 if { ![info exists ::aq_pad_driver] } { set ::aq_pad_driver 4 }
-if { ![info exists ::aq_pad_leaf] } { set ::aq_pad_leaf 0 }
+if { ![info exists ::aq_pad_leaf] } { set ::aq_pad_leaf 3 }
 if { [llength [info commands ::detailed_placement]] && ![llength [info commands ::aq_dpl_orig]]
      && [llength [info commands ::dpl::set_padding_inst]] && [info exists ::env(_SDC_IN)] } {
     set ::aq_pad_file [file join [file dirname $::env(_SDC_IN)] eco_pad_names.tcl]
