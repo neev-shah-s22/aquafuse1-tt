@@ -66,6 +66,7 @@ jobs:
 
       - name: DetailedRouting -> STAPostPNR
         run: |
+          mkdir -p runs/lab
           python -m librelane --docker-no-tty --dockerized --pdk gf180mcuD --run-tag lab --force-run-dir runs/lab \
             --from OpenROAD.DetailedRouting --to OpenROAD.STAPostPNR -i "$LAB_STATE" src/config_merged.json
 
