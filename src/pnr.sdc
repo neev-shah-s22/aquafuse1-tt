@@ -15,9 +15,9 @@ if { [llength [info commands ::clock_tree_synthesis]] && ![llength [info command
     }
 }
 
-set ::aq_gating_hold_margin 2.0
+set ::aq_gating_hold_margin 1.6
 
-# ser28 (4 Nov, DR013 update 19). t5's routed hold failures (-0.97 ns max_tt, -1.43 ns max_ss) are falling clock-gating
+# ser29 (4 Nov, DR013 update 19): y2 with gating margin 1.6 (y2's 2.0 added 1.0 % area and stalled DRT at 169). ser28 (4 Nov, DR013 update 19). t5's routed hold failures (-0.97 ns max_tt, -1.43 ns max_ss) are falling clock-gating
 # checks on the clk root tree: the post-GRT hold repair met them at +0.26 ns on estimated RC and routed RC moved them
 # ~1.7 ns. Only the post-GRT hold repair (the repair_timing call whose -hold_margin is GRT_RESIZER_HOLD_SLACK_MARGIN) sees
 # an extra clock-gating hold margin of ::aq_gating_hold_margin; the post-CTS repair (PL margin) passes through untouched,
