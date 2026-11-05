@@ -17,6 +17,8 @@ if { [llength [info commands ::clock_tree_synthesis]] && ![llength [info command
 
 # ser31-eco (4 Nov, DR013 update 19): one stage holding the whole what-if-checked list (WHATIF.md).
 set ::aq_eco_stages {all}
+# ser32 (4 Nov): ser31-eco failed DPL-0036 on 43 cells at {30 8}; legalization window widened.
+set ::aq_eco_max_disp {300 60}
 # ---------------------------------------------------------------------------------------------------------------------
 # AquaFuse post-route ECO (DR013 update 18 / IDEAS.md idea 1). INSERT INTO src/pnr.sdc of codex/gf-C-ser24-t5, anywhere
 # before the "set clock_port" line (next to the existing clock_tree_synthesis wrapper). Needs src/eco_t5.tcl beside it.
