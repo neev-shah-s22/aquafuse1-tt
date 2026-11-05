@@ -54,6 +54,14 @@ if { [info exists ::env(STEP_DIR)] && [regexp -nocase {(repairdesign|resizertimi
     set_max_capacitance 0.25 [current_design]
     puts "\[INFO] aquafuse pnr.sdc: repair limits 6.0 ns / 0.25 pF in [file tail $::env(STEP_DIR)] (DR0110 Tier 2)"
 }
+# ser30-d50 (4 Nov, DR013 update 19): in the post-GRT design repair only, lift the 6.0 ns / 0.25 pF cap above so each
+# pin's own Liberty limit binds per corner. GRT_DESIGN_REPAIR_MAX_SLEW_PCT 50 and _CAP_PCT 10 then target the update 18
+# data rule exactly (0.5 x max_transition, 0.9 x max_capacitance); ser28-y1 had targeted 0.5 x 6.0 = 3.0 ns everywhere.
+if { [info exists ::env(STEP_DIR)] && [regexp -nocase {repairdesignpostgrt} [file tail $::env(STEP_DIR)]] } {
+    set_max_transition 100 [current_design]
+    set_max_capacitance 100 [current_design]
+    puts "\[INFO] aquafuse pnr.sdc: post-GRT repair against each pin's own Liberty limits in [file tail $::env(STEP_DIR)] (ser30-d50)"
+}
 
 set clk_input [get_port $clock_port]
 set clk_indx [lsearch [all_inputs] $clk_input]

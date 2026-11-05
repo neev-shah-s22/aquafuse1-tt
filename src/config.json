@@ -28,8 +28,9 @@
   "PL_MAX_DISPLACEMENT_Y": 700,
   "DESIGN_REPAIR_MAX_SLEW_PCT": 15,
   "DESIGN_REPAIR_MAX_CAP_PCT": 15,
-  "GRT_DESIGN_REPAIR_MAX_SLEW_PCT": 15,
-  "GRT_DESIGN_REPAIR_MAX_CAP_PCT": 15,
+  "//": "ser30-d50 (4 Nov, DR013 update 19): post-GRT data repair to exactly 0.5 x each pin's own Liberty max_transition and 0.9 x max_capacitance per corner (pnr.sdc lifts the 6.0 ns / 0.25 pF repair cap in 41-repairdesignpostgrt only). ser28-y1 had targeted 0.5 x 6.0 = 3.0 ns.",
+  "GRT_DESIGN_REPAIR_MAX_SLEW_PCT": 50,
+  "GRT_DESIGN_REPAIR_MAX_CAP_PCT": 10,
 
   "//": "CLOCK_PERIOD - Increase this in case you are getting setup time violations.",
   "//": "The value is in nanoseconds, so 20ns == 50MHz.",
