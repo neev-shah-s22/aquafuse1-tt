@@ -89,6 +89,8 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
         # where everything sits before the ECO, to find what legalization moves
         set before [dict create]
         foreach inst [$block getInsts] { dict set before [$inst getName] [$inst getLocation] }
+        set orient_before [dict create]
+        foreach inst [$block getInsts] { dict set orient_before [$inst getName] [$inst getOrient] }
         set touched [dict create]
         set nswap 0
         set missing {}
@@ -137,6 +139,30 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
         global_connect
         log_cmd detailed_placement -max_displacement $::aq_eco_max_disp
         foreach l $locked { [lindex $l 0] setPlacementStatus [lindex $l 1] }
+        # ECO lab, 5 Nov: detailed_placement re-orients cells it does not move (t5's _25381_ R180 -> MX at the same
+        # location); their routed wires then miss the mirrored pins (DRT-1231). Put back every original orientation
+        # whose row parity is unchanged (same row orientation, so still legal); any other change counts as touched.
+        set restored 0
+        set reoriented 0
+        set rowh [[[lindex [$block getRows] 0] getSite] getHeight]
+        foreach inst [$block getInsts] {
+            set n [$inst getName]
+            if { ![dict exists $orient_before $n] } { continue }
+            set o0 [dict get $orient_before $n]
+            if { [$inst getOrient] eq $o0 } { continue }
+            lassign [dict get $before $n] x0 y0
+            lassign [$inst getLocation] x1 y1
+            if { (abs($y1 - $y0) / $rowh) % 2 == 0 } {
+                $inst setOrient $o0
+                $inst setLocation $x1 $y1
+                incr restored
+            } else {
+                dict set touched $n 1
+                incr reoriented
+            }
+        }
+        puts "\[INFO] aquafuse pnr.sdc: post-route ECO: $restored orientations restored after legalization,\
+              $reoriented cells re-oriented by a row change"
         ::aq_eco_report_watch after
         check_placement -verbose
         set nmoved 0
