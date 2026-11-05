@@ -28,6 +28,13 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Checkout tt-support-tools (config_merged.json reads tt/tech/gf180mcuD/def/*.def)
+        uses: actions/checkout@v6
+        with:
+          repository: TinyTapeout/tt-support-tools
+          ref: main
+          path: tt
+
       - name: Setup python
         uses: actions/setup-python@v6
         with:
