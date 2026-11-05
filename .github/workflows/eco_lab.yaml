@@ -1,0 +1,91 @@
+name: eco_lab
+
+# ECO lab (DR013 update 19). Re-runs only LibreLane's DetailedRouting -> STAPostPNR steps of ser24-t5 (gds run
+# 41563981135, restored from its GDS_logs artifact), once per variant in lab/variants/, so a post-route ECO is tested in
+# about an hour instead of a full 2 h harden. Variants differ only in src/eco_variant.tcl (read by src/pnr.sdc).
+# Not a candidate build: this branch carries no gds/precheck/gl_test workflow.
+
+on:
+  push:
+    branches: ['codex/gf-C-ecolab*']
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  lab:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [repro, noripup, lock, pre]
+    steps:
+      - name: checkout repo
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install LibreLane
+        run: pip install librelane==3.0.14
+
+      - name: Restore t5's run (GDS_logs of gds run 41563981135)
+        uses: actions/download-artifact@v5
+        with:
+          name: GDS_logs
+          run-id: 41563981135
+          github-token: ${{ github.token }}
+          path: t5art
+
+      - name: Stage run directory and variant
+        run: |
+          set -euo pipefail
+          mkdir -p runs
+          mv t5art/runs/wokwi runs/wokwi
+          cp t5art/src/config_merged.json src/config_merged.json
+          rm -rf t5art
+          cp lab/variants/${{ matrix.variant }}.tcl src/eco_variant.tcl
+          [ -f lab/moves/${{ matrix.variant }}.tcl ] && cp lab/moves/${{ matrix.variant }}.tcl src/eco_moves.tcl || true
+          drt=$(ls -d runs/wokwi/*-openroad-detailedrouting | head -1)
+          echo "t5 DRT step: $drt"; ls "$drt"
+          if grep -q 'aq_eco_mode pre' src/eco_variant.tcl; then
+            n=$(basename "$drt" | cut -d- -f1); prev=$(ls -d runs/wokwi/$((10#$n - 1))-* | head -1)
+            state="$drt/state_in.json"; [ -f "$state" ] || state="$prev/state_out.json"
+          else
+            state="$drt/state_out.json"
+          fi
+          echo "initial state: $state"
+          echo "LAB_STATE=$state" >> $GITHUB_ENV
+
+      - name: DetailedRouting -> STAPostPNR
+        run: |
+          python -m librelane --docker-no-tty --dockerized --pdk gf180mcuD --run-tag lab --force-run-dir runs/lab \
+            --from OpenROAD.DetailedRouting --to OpenROAD.STAPostPNR -i "$LAB_STATE" src/config_merged.json
+
+      - name: Summary
+        if: always()
+        run: |
+          grep -rhaE "aquafuse pnr.sdc|DRT-1231|DPL-00(34|35|36)|Number of violations|Total wire length =" runs/lab/*/*.log 2>/dev/null | head -200 || true
+          find runs/lab -maxdepth 2 -name "*.log" | sort
+          cat runs/lab/*-openroad-stapostpnr/summary.rpt 2>/dev/null | head -80 || true
+
+      - name: Upload lab results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: eco_lab_${{ matrix.variant }}
+          path: |
+            runs/lab/**/*.log
+            runs/lab/**/*.rpt
+            runs/lab/**/*.drc
+            runs/lab/**/*.json
+            runs/lab/**/*.spef
+            runs/lab/**/*.nl.v
+            runs/lab/**/*.sdc

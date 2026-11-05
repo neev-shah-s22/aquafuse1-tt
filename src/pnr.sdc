@@ -19,6 +19,17 @@ if { [llength [info commands ::clock_tree_synthesis]] && ![llength [info command
 set ::aq_eco_stages {all}
 # ser32 (4 Nov): ser31-eco failed DPL-0036 on 43 cells at {30 8}; legalization window widened.
 set ::aq_eco_max_disp {300 60}
+# ECO lab (5 Nov, DR013 update 19): src/eco_variant.tcl, if present, overrides the settings above for one lab job.
+# Lab-only knobs, all optional:
+#   ::aq_eco_mode   post (default: route, ECO, re-route) | lab_post (the input ODB is already routed: ECO, re-route) |
+#                   pre (ECO first, then the step's single route)
+#   ::aq_eco_lock   instances held LOCKED while the ECO legalizes
+#   ::aq_eco_watch  instances whose master and location are logged before and after legalization
+#   ::aq_eco_moves  {inst x_dbu y_dbu orient} placed before legalization (src/eco_moves.tcl)
+if { [info exists ::env(_SDC_IN)] && [file exists [file join [file dirname $::env(_SDC_IN)] eco_variant.tcl]] } {
+    source [file join [file dirname $::env(_SDC_IN)] eco_variant.tcl]
+    puts "\[INFO] aquafuse pnr.sdc: ECO lab variant loaded"
+}
 # ---------------------------------------------------------------------------------------------------------------------
 # AquaFuse post-route ECO (DR013 update 18 / IDEAS.md idea 1). INSERT INTO src/pnr.sdc of codex/gf-C-ser24-t5, anywhere
 # before the "set clock_port" line (next to the existing clock_tree_synthesis wrapper). Needs src/eco_t5.tcl beside it.
@@ -57,6 +68,17 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
     # 0: leave stale wires and rely on TritonRoute's incremental mode, as drt.tcl's own diode re-route does.
     if { ![info exists ::aq_eco_ripup] } { set ::aq_eco_ripup 1 }
 
+    if { ![info exists ::aq_eco_mode] } { set ::aq_eco_mode post }
+    proc ::aq_eco_report_watch { tag } {
+        if { ![info exists ::aq_eco_watch] } { return }
+        set block [ord::get_db_block]
+        foreach inst [$block getInsts] {
+            if { [string map {\\ {}} [$inst getName]] ni $::aq_eco_watch } { continue }
+            puts "\[INFO] aquafuse pnr.sdc: watch $tag [$inst getName] [[$inst getMaster] getName]\
+                  [$inst getLocation] [$inst getOrient] [$inst getPlacementStatus]"
+        }
+    }
+
     proc ::aq_eco_apply {} {
         set block [ord::get_db_block]
         set db [ord::get_db]
@@ -91,8 +113,31 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
             puts "\[WARNING] aquafuse pnr.sdc: post-route ECO: [llength $missing] instances not in this layout: [lrange $missing 0 20]"
             if { [llength $missing] > 4 } { error "aquafuse pnr.sdc: ECO list does not match this layout (not t5's route?)" }
         }
+        if { [info exists ::aq_eco_moves] } {
+            set nm 0
+            foreach mv $::aq_eco_moves {
+                lassign $mv name x y orient
+                if { ![dict exists $byname $name] } { lappend missing $name; continue }
+                set inst [dict get $byname $name]
+                $inst setOrient $orient
+                $inst setLocation $x $y
+                $inst setPlacementStatus PLACED
+                incr nm
+            }
+            puts "\[INFO] aquafuse pnr.sdc: post-route ECO: $nm planned moves applied"
+        }
+        set locked {}
+        foreach name [expr { [info exists ::aq_eco_lock] ? $::aq_eco_lock : {} }] {
+            if { ![dict exists $byname $name] } { continue }
+            set inst [dict get $byname $name]
+            lappend locked [list $inst [$inst getPlacementStatus]]
+            $inst setPlacementStatus LOCKED
+        }
+        ::aq_eco_report_watch before
         global_connect
         log_cmd detailed_placement -max_displacement $::aq_eco_max_disp
+        foreach l $locked { [lindex $l 0] setPlacementStatus [lindex $l 1] }
+        ::aq_eco_report_watch after
         check_placement -verbose
         set nmoved 0
         set disp 0.0
@@ -132,7 +177,18 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
 
     rename ::detailed_route ::aq_drt_orig
     proc ::detailed_route { args } {
-        set r [uplevel 1 [list ::aq_drt_orig {*}$args]]
+        if { !$::aq_eco_done && $::aq_eco_mode eq "pre" } {
+            set ::aq_eco_done 1
+            puts "\[INFO] aquafuse pnr.sdc: ECO lab mode pre: applying the ECO before the first route"
+            ::aq_eco_apply
+            return [uplevel 1 [list ::aq_drt_orig {*}$args]]
+        }
+        if { !$::aq_eco_done && $::aq_eco_mode eq "lab_post" } {
+            puts "\[INFO] aquafuse pnr.sdc: ECO lab mode lab_post: input ODB is already routed, first route skipped"
+            set r 0
+        } else {
+            set r [uplevel 1 [list ::aq_drt_orig {*}$args]]
+        }
         if { !$::aq_eco_done } {
             set ::aq_eco_done 1
             puts "\[INFO] aquafuse pnr.sdc: first detailed route complete; applying post-route ECO from $::aq_eco_file"
