@@ -96,6 +96,8 @@ set ::aq_eco_regrt full
 set ::aq_eco_dpl 1
 set ::aq_eco_max_disp {100 20}
 set ::aq_eco_watch {_16961_ max_cap504 _16970_}
+set ::aq_drt_seeds {7 2024 99}
+set ::aq_drt_reroute_iters 24
 if { [info exists ::env(_SDC_IN)] && [file exists [file join [file dirname $::env(_SDC_IN)] eco_moves.tcl]] } {
     source [file join [file dirname $::env(_SDC_IN)] eco_moves.tcl]
 }
@@ -365,6 +367,46 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
             }
         } else {
             puts "\[INFO] aquafuse pnr.sdc: detailed_route passed through (ECO already applied)"
+        }
+        return $r
+    }
+    # ser38 (6 Nov, DR013 update 19): ser37's single route reached 0 violations in 34 min, then drt.tcl's antenna loop
+    # (8 nets, 10 diodes) re-routed with -or_seed 42 and sat on one Metal4 short from iteration 47 to the 6 h cap; padB's
+    # identical loop converged in 2 passes. The first route is unchanged (same seed, so it reproduces ser37's 0); only
+    # the antenna loop's re-routes try other seeds, each capped at ::aq_drt_reroute_iters, keeping the first that ends
+    # at 0 violations. The last seed gets the step's own -droute_end_iter.
+    if { ![info exists ::aq_drt_seeds] } { set ::aq_drt_seeds {} }
+    if { ![info exists ::aq_drt_reroute_iters] } { set ::aq_drt_reroute_iters 24 }
+    rename ::detailed_route ::aq_drt_eco
+    proc ::detailed_route { args } {
+        if { !$::aq_eco_done || ![llength $::aq_drt_seeds] } {
+            return [uplevel 1 [list ::aq_drt_eco {*}$args]]
+        }
+        set base {}
+        set end 64
+        for { set i 0 } { $i < [llength $args] } { incr i } {
+            set a [lindex $args $i]
+            if { $a eq "-droute_end_iter" } { incr i; set end [lindex $args $i]; continue }
+            if { $a eq "-or_seed" } { incr i; continue }
+            lappend base $a
+        }
+        set seeds $::aq_drt_seeds
+        if { ![llength [info commands detailed_route_num_drvs]] } {
+            puts "\[WARNING] aquafuse pnr.sdc: no detailed_route_num_drvs; one antenna re-route, seed [lindex $seeds 0]"
+            set seeds [lrange $seeds 0 0]
+        }
+        set k 0
+        foreach seed $seeds {
+            incr k
+            set it [expr { $k == [llength $seeds] ? $end : $::aq_drt_reroute_iters }]
+            puts "\[INFO] aquafuse pnr.sdc: antenna re-route attempt $k: -or_seed $seed -droute_end_iter $it"
+            set r [uplevel 1 [list ::aq_drt_orig {*}$base -or_seed $seed -droute_end_iter $it]]
+            if { [catch { detailed_route_num_drvs } n] } {
+                puts "\[WARNING] aquafuse pnr.sdc: detailed_route_num_drvs unavailable ($n); keeping attempt $k"
+                return $r
+            }
+            puts "\[INFO] aquafuse pnr.sdc: antenna re-route attempt $k left $n violations"
+            if { $n == 0 } { return $r }
         }
         return $r
     }
