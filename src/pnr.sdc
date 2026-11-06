@@ -99,6 +99,9 @@ set ::aq_eco_watch {_16961_ max_cap504 _16970_}
 set ::aq_drt_seeds {}
 set ::aq_drt_antenna_fresh 1
 set ::aq_drt_fresh_n 0
+set ::aq_drt_ant_iters 10
+set ::aq_drt_ant_margin 10
+set ::aq_drt_budget_min 245
 set ::aq_drt_reroute_iters 24
 if { [info exists ::env(_SDC_IN)] && [file exists [file join [file dirname $::env(_SDC_IN)] eco_moves.tcl]] } {
     source [file join [file dirname $::env(_SDC_IN)] eco_moves.tcl]
@@ -387,6 +390,45 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
     # (the step's input had none: power and special nets are kept), global routing is re-made, and the step's own
     # detailed_route runs with its own arguments.
     if { ![info exists ::aq_drt_antenna_fresh] } { set ::aq_drt_antenna_fresh 0 }
+    # ser40 (6 Nov): ser39's four from-scratch routes all reached 0 violations, but each one re-draws every net, so
+    # the antenna count wandered (8, 6, 1, then 5 left when drt.tcl's 3 passes ran out; precheck's KLayout antenna
+    # check failed with 25). In this step only (config.json's GRT_ANTENNA_REPAIR_MARGIN 0 still governs step 43):
+    #   ::aq_drt_ant_iters   replaces DRT_ANTENNA_REPAIR_ITERS (drt.tcl reads it after this file is sourced);
+    #   ::aq_drt_ant_margin  replaces repair_antennas' -ratio_margin, so nets near the limit get diodes too and the
+    #                        next re-draw is less likely to push them over;
+    #   ::aq_drt_budget_min  minutes into the step after which check_antennas reports 0 to end drt.tcl's loop (the
+    #                        real count is printed, and OpenROAD.CheckAntennas-1 measures it again after the step),
+    #                        so the job finishes inside the 6 h cap with a report instead of being cancelled.
+    set ::aq_drt_t0 [clock seconds]
+    if { [info exists ::aq_drt_ant_iters] } { set ::env(DRT_ANTENNA_REPAIR_ITERS) $::aq_drt_ant_iters }
+    if { [llength [info commands ::check_antennas]] && ![llength [info commands ::aq_ca_orig]] } {
+        rename ::check_antennas ::aq_ca_orig
+        proc ::check_antennas { args } {
+            set n [uplevel 1 [list ::aq_ca_orig {*}$args]]
+            set el [expr { ([clock seconds] - $::aq_drt_t0) / 60 }]
+            puts "\[INFO] aquafuse pnr.sdc: check_antennas: $n nets, $el min into the step"
+            if { $n && [info exists ::aq_drt_budget_min] && $el > $::aq_drt_budget_min } {
+                puts "\[WARNING] aquafuse pnr.sdc: antenna loop stopped at the $::aq_drt_budget_min min budget with\
+                      $n nets still violating (CheckAntennas-1 reports them)"
+                return 0
+            }
+            return $n
+        }
+    }
+    if { [info exists ::aq_drt_ant_margin] && [llength [info commands ::repair_antennas]]
+         && ![llength [info commands ::aq_ra_orig]] } {
+        rename ::repair_antennas ::aq_ra_orig
+        proc ::repair_antennas { args } {
+            set i [lsearch -exact $args -ratio_margin]
+            if { $i >= 0 } {
+                set args [lreplace $args [expr { $i + 1 }] [expr { $i + 1 }] $::aq_drt_ant_margin]
+            } else {
+                lappend args -ratio_margin $::aq_drt_ant_margin
+            }
+            puts "\[INFO] aquafuse pnr.sdc: repair_antennas $args"
+            return [uplevel 1 [list ::aq_ra_orig {*}$args]]
+        }
+    }
     proc ::aq_drt_fresh { args } {
         if { [catch { check_placement } err] } {
             puts "\[INFO] aquafuse pnr.sdc: antenna fresh re-route: placement not legal after diodes ($err); legalizing"
