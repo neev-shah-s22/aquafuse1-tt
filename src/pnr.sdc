@@ -96,7 +96,9 @@ set ::aq_eco_regrt full
 set ::aq_eco_dpl 1
 set ::aq_eco_max_disp {100 20}
 set ::aq_eco_watch {_16961_ max_cap504 _16970_}
-set ::aq_drt_seeds {7 2024 99}
+set ::aq_drt_seeds {}
+set ::aq_drt_antenna_fresh 1
+set ::aq_drt_fresh_n 0
 set ::aq_drt_reroute_iters 24
 if { [info exists ::env(_SDC_IN)] && [file exists [file join [file dirname $::env(_SDC_IN)] eco_moves.tcl]] } {
     source [file join [file dirname $::env(_SDC_IN)] eco_moves.tcl]
@@ -378,7 +380,40 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
     if { ![info exists ::aq_drt_seeds] } { set ::aq_drt_seeds {} }
     if { ![info exists ::aq_drt_reroute_iters] } { set ::aq_drt_reroute_iters 24 }
     rename ::detailed_route ::aq_drt_eco
+    # ser39 (6 Nov): ser38's first route reproduced ser37's 0, but the seeds made the antenna re-route worse (3, then 6,
+    # then 7 shorts, each attempt starting from the last one's wires). Every from-scratch route of this placement has
+    # converged (lab 4 null control, ser37, ser38), so with ::aq_drt_antenna_fresh the antenna loop's re-routes start
+    # from scratch too: the diodes repair_antennas just placed are legalized if needed, every signal wire is removed
+    # (the step's input had none: power and special nets are kept), global routing is re-made, and the step's own
+    # detailed_route runs with its own arguments.
+    if { ![info exists ::aq_drt_antenna_fresh] } { set ::aq_drt_antenna_fresh 0 }
+    proc ::aq_drt_fresh { args } {
+        if { [catch { check_placement } err] } {
+            puts "\[INFO] aquafuse pnr.sdc: antenna fresh re-route: placement not legal after diodes ($err); legalizing"
+            log_cmd detailed_placement -max_displacement $::aq_eco_max_disp
+            check_placement -verbose
+        }
+        # global routing first (it ignores detailed wires): if OpenROAD refuses a second global_route in this process,
+        # the wires are kept and this is drt.tcl's usual incremental re-route
+        if { [catch { ::aq_eco_grt_full } err] } {
+            puts "\[WARNING] aquafuse pnr.sdc: antenna fresh re-route: global routing failed ($err); incremental re-route"
+            return [uplevel 1 [list ::aq_drt_orig {*}$args]]
+        }
+        set n 0
+        foreach net [[ord::get_db_block] getNets] {
+            if { [$net getSigType] in {POWER GROUND} || [$net isSpecial] } { continue }
+            set w [$net getWire]
+            if { $w ne "NULL" && $w ne "" } { odb::dbWire_destroy $w; incr n }
+        }
+        puts "\[INFO] aquafuse pnr.sdc: antenna fresh re-route: $n signal wires removed after global routing"
+        return [uplevel 1 [list ::aq_drt_orig {*}$args]]
+    }
     proc ::detailed_route { args } {
+        if { $::aq_eco_done && $::aq_drt_antenna_fresh } {
+            incr ::aq_drt_fresh_n
+            puts "\[INFO] aquafuse pnr.sdc: antenna re-route $::aq_drt_fresh_n from scratch (ser39)"
+            return [uplevel 1 [list ::aq_drt_fresh {*}$args]]
+        }
         if { !$::aq_eco_done || ![llength $::aq_drt_seeds] } {
             return [uplevel 1 [list ::aq_drt_eco {*}$args]]
         }
