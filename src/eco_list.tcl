@@ -1,6 +1,8 @@
 # ser37 (DR013 update 19, IDEAS2.md idea 2 run B): 260 in-place swaps from the ser36-padB what-if (VPS vps-074593ae,
 # padB_m5.swaps: OpenSTA on padB gds run 42129576336 netlist + signoff SDC + min/nom/max SPEF, 9 corners). Every DR013 update
 # 18 term met: hold >= +0.1789 ns (max_ff), control 0 at tt (owner 4 Nov), data/out/lib 0, latch-aware setup >= 37.06 ns.
+# ser41 (6 Nov): the last 53 entries are swaps picked on ser39's own wiring (VPS ser39c_h1.swaps; all update-18 terms met
+# at 9 corners on ser39's SPEFs, hold >= +0.1969 ns, latch 0 violated). Later entries win for the same instance.
 set ::aq_eco_lists [dict create]
 dict set ::aq_eco_lists all [list \
     {_16741_ gf180mcu_fd_sc_mcu7t5v0__xor3_2} \
@@ -263,4 +265,57 @@ dict set ::aq_eco_lists all [list \
     {clkbuf_1_0__f_genblk1.g_bg_cell.u_bg.u_wg.iclk_n gf180mcu_fd_sc_mcu7t5v0__clkbuf_8} \
     {clkbuf_1_1__f_flush_clk gf180mcu_fd_sc_mcu7t5v0__clkbuf_1} \
     {max_cap504 gf180mcu_fd_sc_mcu7t5v0__clkbuf_8} \
+    {_16280_ gf180mcu_fd_sc_mcu7t5v0__clkinv_3} \
+    {_16732_ gf180mcu_fd_sc_mcu7t5v0__xor2_2} \
+    {_16772_ gf180mcu_fd_sc_mcu7t5v0__nor2_2} \
+    {_16913_ gf180mcu_fd_sc_mcu7t5v0__nor2_2} \
+    {_16924_ gf180mcu_fd_sc_mcu7t5v0__nor2_2} \
+    {_17010_ gf180mcu_fd_sc_mcu7t5v0__nor2_2} \
+    {_17011_ gf180mcu_fd_sc_mcu7t5v0__nor2_4} \
+    {_17013_ gf180mcu_fd_sc_mcu7t5v0__nor2_2} \
+    {_17193_ gf180mcu_fd_sc_mcu7t5v0__nor2_2} \
+    {_19612_ gf180mcu_fd_sc_mcu7t5v0__xor2_2} \
+    {_20573_ gf180mcu_fd_sc_mcu7t5v0__nor4_2} \
+    {_20672_ gf180mcu_fd_sc_mcu7t5v0__nor4_2} \
+    {_21773_ gf180mcu_fd_sc_mcu7t5v0__nor4_2} \
+    {_22585_ gf180mcu_fd_sc_mcu7t5v0__aoi221_2} \
+    {_24029_ gf180mcu_fd_sc_mcu7t5v0__nor2_2} \
+    {_24081_ gf180mcu_fd_sc_mcu7t5v0__nor2_2} \
+    {_24098_ gf180mcu_fd_sc_mcu7t5v0__aoi21_2} \
+    {_25461_ gf180mcu_fd_sc_mcu7t5v0__nor2_4} \
+    {_25474_ gf180mcu_fd_sc_mcu7t5v0__nor2_4} \
+    {_25493_ gf180mcu_fd_sc_mcu7t5v0__nor2_4} \
+    {_25496_ gf180mcu_fd_sc_mcu7t5v0__nor2_4} \
+    {_26124_ gf180mcu_fd_sc_mcu7t5v0__nor2_2} \
+    {_27272_ gf180mcu_fd_sc_mcu7t5v0__aoi21_2} \
+    {_28321_ gf180mcu_fd_sc_mcu7t5v0__nand4_2} \
+    {_29834_ gf180mcu_fd_sc_mcu7t5v0__nor4_2} \
+    {clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[19].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_8} \
+    {clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[26].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_4} \
+    {clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[49].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
+    {clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[55].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_4} \
+    {clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[56].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
+    {clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[5].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
+    {clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[62].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
+    {clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[67].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
+    {clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[71].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
+    {clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[76].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
+    {clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[79].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
+    {clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[8].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
+    {clkbuf_0_genblk1.g_bg_cell.u_bg.u_uq.gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_8} \
+    {clkbuf_0_u_b1.g_slot[0].g_col[0].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
+    {clkbuf_0_u_stem.g_col[5].u_lat.en gf180mcu_fd_sc_mcu7t5v0__clkbuf_8} \
+    {clkbuf_0_u_stem.g_col[6].u_lat.en gf180mcu_fd_sc_mcu7t5v0__clkbuf_8} \
+    {clkbuf_0_u_stem.g_col[7].u_lat.en gf180mcu_fd_sc_mcu7t5v0__clkbuf_4} \
+    {clkbuf_0_u_stem.g_col[8].u_lat.en gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
+    {clkbuf_1_1__f__16251_ gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
+    {clkbuf_2_0__f_genblk1.g_bg_cell.u_bg.g_ent[36].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_4} \
+    {clkbuf_2_0__f_genblk1.g_bg_cell.u_bg.g_ent[72].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
+    {clkbuf_2_1__f_genblk1.g_bg_cell.u_bg.g_ent[32].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
+    {clkbuf_2_1__f_genblk1.g_bg_cell.u_bg.g_ent[37].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_4} \
+    {clkbuf_2_1__f_genblk1.g_bg_cell.u_bg.g_ent[44].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
+    {clkbuf_2_1__f_genblk1.g_bg_cell.u_bg.g_ent[54].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
+    {clkbuf_2_1__f_genblk1.g_bg_cell.u_bg.u_uq.gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_4} \
+    {clkbuf_2_3__f_genblk1.g_bg_cell.u_bg.g_ent[1].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
+    {u_b1.u_wg.u_idx.g_bit[4].u_l gf180mcu_fd_sc_mcu7t5v0__latq_2} \
 ]
