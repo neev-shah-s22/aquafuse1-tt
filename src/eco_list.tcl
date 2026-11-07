@@ -3,6 +3,8 @@
 # 18 term met: hold >= +0.1789 ns (max_ff), control 0 at tt (owner 4 Nov), data/out/lib 0, latch-aware setup >= 37.06 ns.
 # ser41 (6 Nov): the last 53 entries are swaps picked on ser39's own wiring (VPS ser39c_h1.swaps; all update-18 terms met
 # at 9 corners on ser39's SPEFs, hold >= +0.1969 ns, latch 0 violated). Later entries win for the same instance.
+# ser42 (6 Nov): plus the 11 swaps of ser40c_r2.swaps (57, picked on ser40's own wiring; all terms met there) not already in
+# ser39's list (the other 46 are the same cells at the same sizes), appended last.
 set ::aq_eco_lists [dict create]
 dict set ::aq_eco_lists all [list \
     {_16741_ gf180mcu_fd_sc_mcu7t5v0__xor3_2} \
@@ -318,4 +320,15 @@ dict set ::aq_eco_lists all [list \
     {clkbuf_2_1__f_genblk1.g_bg_cell.u_bg.u_uq.gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_4} \
     {clkbuf_2_3__f_genblk1.g_bg_cell.u_bg.g_ent[1].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
     {u_b1.u_wg.u_idx.g_bit[4].u_l gf180mcu_fd_sc_mcu7t5v0__latq_2} \
+    {_17009_ gf180mcu_fd_sc_mcu7t5v0__nor2_2} \
+    {_20819_ gf180mcu_fd_sc_mcu7t5v0__nor4_2} \
+    {_25409_ gf180mcu_fd_sc_mcu7t5v0__nor2_2} \
+    {_25439_ gf180mcu_fd_sc_mcu7t5v0__nor2_4} \
+    {_25444_ gf180mcu_fd_sc_mcu7t5v0__nor2_4} \
+    {_25467_ gf180mcu_fd_sc_mcu7t5v0__nor2_4} \
+    {_26403_ gf180mcu_fd_sc_mcu7t5v0__nor2_2} \
+    {_27269_ gf180mcu_fd_sc_mcu7t5v0__aoi21_2} \
+    {_29469_ gf180mcu_fd_sc_mcu7t5v0__nor4_2} \
+    {clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[84].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
+    {clkbuf_1_0__f__16251_ gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
 ]
