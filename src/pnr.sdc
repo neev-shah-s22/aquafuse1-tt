@@ -429,6 +429,67 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
             return [uplevel 1 [list ::aq_ra_orig {*}$args]]
         }
     }
+    # ser43 (7 Nov): a second, small ECO on the FINISHED route. Each from-scratch route re-draws every net and takes a few
+    # new detours (ser42's _10650_: 0.038 pF in ser40, 0.187 pF in ser42), so swap lists picked on one route only partly
+    # carry to the next. Everything before write_views is unchanged, so this step reproduces ser42's route exactly (as
+    # ser38 reproduced ser37). drt.tcl ends with write_views; just before it, src/eco_list2.tcl (the swaps picked on
+    # ser42's own SPEFs) goes through ::aq_eco_apply in post mode with no planned moves: swapMaster, a small
+    # detailed_placement, orientation restore, rip-up of only the touched nets, global routing re-made, then an
+    # incremental detailed_route of those nets (::aq_eco2_iters iterations) and the antenna check / diode repair on that.
+    if { ![info exists ::aq_eco2_iters] } { set ::aq_eco2_iters 40 }
+    set ::aq_eco2_done 0
+    set ::aq_eco2_file [file join [file dirname $::env(_SDC_IN)] eco_list2.tcl]
+    if { [llength [info commands ::write_views]] && ![llength [info commands ::aq_wv_orig]]
+         && [file exists $::aq_eco2_file] } {
+        rename ::write_views ::aq_wv_orig
+        proc ::aq_eco2_route {} {
+            set a {}
+            set skip 0
+            foreach x $::aq_drt_last_args {
+                if { $skip } { set skip 0; continue }
+                if { $x eq "-droute_end_iter" } { set skip 1; continue }
+                lappend a $x
+            }
+            set r [::aq_drt_orig {*}$a -droute_end_iter $::aq_eco2_iters]
+            # as drt.tcl's drt_run does: the step-level DRC report is the latest route's
+            set i [lsearch -exact $a -output_drc]
+            if { $i >= 0 && [file exists [lindex $a [expr { $i + 1 }]]] } {
+                set f [lindex $a [expr { $i + 1 }]]
+                file copy -force $f [file join $::env(STEP_DIR) [file tail $f]]
+            }
+            return $r
+        }
+        proc ::write_views { args } {
+            if { !$::aq_eco2_done } {
+                set ::aq_eco2_done 1
+                set ::aq_eco_file $::aq_eco2_file
+                if { [info exists ::aq_eco_moves] } { unset ::aq_eco_moves }
+                set ::aq_eco_mode post
+                set ::aq_eco_ripup 1
+                set ::aq_eco_regrt full
+                set ::aq_eco_dpl 1
+                puts "\[INFO] aquafuse pnr.sdc: stage-2 ECO (ser43) on the finished route from $::aq_eco2_file"
+                set n [::aq_eco_apply]
+                if { $n > 0 } {
+                    ::aq_eco2_route
+                    set ca [expr { [llength [info commands ::aq_ca_orig]] ? "::aq_ca_orig" : "check_antennas" }]
+                    for { set k 1 } { $k <= 3 && [$ca] } { incr k } {
+                        set diode [lindex [split $::env(DIODE_CELL) "/"] 0]
+                        set ra [list $diode -ratio_margin 0]
+                        if { [info exists ::env(GRT_ALLOW_CONGESTION)] && $::env(GRT_ALLOW_CONGESTION) } {
+                            lappend ra -allow_congestion
+                        }
+                        set d [repair_antennas {*}$ra]
+                        puts "\[INFO] aquafuse pnr.sdc: stage-2 antenna repair $k: $d diodes"
+                        if { !$d } { break }
+                        ::aq_eco2_route
+                    }
+                    puts "\[INFO] aquafuse pnr.sdc: stage-2 ECO done ($n swaps)"
+                }
+            }
+            return [uplevel 1 [list ::aq_wv_orig {*}$args]]
+        }
+    }
     proc ::aq_drt_fresh { args } {
         if { [catch { check_placement } err] } {
             puts "\[INFO] aquafuse pnr.sdc: antenna fresh re-route: placement not legal after diodes ($err); legalizing"
@@ -451,6 +512,7 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
         return [uplevel 1 [list ::aq_drt_orig {*}$args]]
     }
     proc ::detailed_route { args } {
+        set ::aq_drt_last_args $args
         if { $::aq_eco_done && $::aq_drt_antenna_fresh } {
             incr ::aq_drt_fresh_n
             puts "\[INFO] aquafuse pnr.sdc: antenna re-route $::aq_drt_fresh_n from scratch (ser39)"
