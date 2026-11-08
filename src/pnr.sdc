@@ -99,7 +99,12 @@ set ::aq_eco_watch {_16961_ max_cap504 _16970_}
 set ::aq_drt_seeds {}
 set ::aq_drt_antenna_fresh 1
 set ::aq_drt_fresh_n 0
-set ::aq_drt_ant_iters 10
+# ser44 (7 Nov): no from-scratch antenna passes. ser43 (identical to ser42 up to the first route) needed 166 min for the
+# first route on a slower runner where ser42 took 98, so its fresh antenna passes ran into the 245 min budget and the
+# job hit the 6 h cap in FillInsertion. Stage 2 now runs straight on the first route (deterministic across runners)
+# and repairs antennas incrementally there (ser43: 17 diodes, re-route 0 in 13 min).
+set ::aq_drt_ant_iters 0
+set ::aq_eco2_ant_passes 6
 set ::aq_drt_ant_margin 10
 set ::aq_drt_budget_min 245
 set ::aq_drt_reroute_iters 24
@@ -437,6 +442,7 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
     # detailed_placement, orientation restore, rip-up of only the touched nets, global routing re-made, then an
     # incremental detailed_route of those nets (::aq_eco2_iters iterations) and the antenna check / diode repair on that.
     if { ![info exists ::aq_eco2_iters] } { set ::aq_eco2_iters 40 }
+    if { ![info exists ::aq_eco2_ant_passes] } { set ::aq_eco2_ant_passes 3 }
     set ::aq_eco2_done 0
     set ::aq_eco2_file [file join [file dirname $::env(_SDC_IN)] eco_list2.tcl]
     if { [llength [info commands ::write_views]] && ![llength [info commands ::aq_wv_orig]]
@@ -473,7 +479,7 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
                 if { $n > 0 } {
                     ::aq_eco2_route
                     set ca [expr { [llength [info commands ::aq_ca_orig]] ? "::aq_ca_orig" : "check_antennas" }]
-                    for { set k 1 } { $k <= 3 && [$ca] } { incr k } {
+                    for { set k 1 } { $k <= $::aq_eco2_ant_passes && [$ca] } { incr k } {
                         set diode [lindex [split $::env(DIODE_CELL) "/"] 0]
                         set ra [list $diode -ratio_margin 0]
                         if { [info exists ::env(GRT_ALLOW_CONGESTION)] && $::env(GRT_ALLOW_CONGESTION) } {
