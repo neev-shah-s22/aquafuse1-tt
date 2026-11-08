@@ -448,19 +448,104 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
     if { [llength [info commands ::write_views]] && ![llength [info commands ::aq_wv_orig]]
          && [file exists $::aq_eco2_file] } {
         rename ::write_views ::aq_wv_orig
+        # ser45 (8 Nov): ser44's stage-2 re-route (26 swaps on the first route) sat on 2 Metal2 shorts from iteration 6
+        # to 40, both at pin access next to cells it had not moved (_02392_/_15665_ at 446,615 um; _02341_/net1091 at
+        # 451,635 um), and the flow stopped on "2 Routing DRC errors". After each stage-2 route that leaves violations,
+        # up to ::aq_eco2_fix_tries times: rip up the violating nets and every signal net on a cell within
+        # ::aq_eco2_fix_um (x the attempt number) of a violation, re-make global routing, and re-route incrementally with
+        # the next seed of ::aq_eco2_fix_seeds. No attempt starts after ::aq_eco2_fix_budget minutes into the step
+        # (ser44 on a slow runner finished the step at 273 min and the job at 5 h 36 min of the 6 h cap).
+        if { ![info exists ::aq_eco2_fix_tries] } { set ::aq_eco2_fix_tries 3 }
+        if { ![info exists ::aq_eco2_fix_um] } { set ::aq_eco2_fix_um 4.0 }
+        if { ![info exists ::aq_eco2_fix_seeds] } { set ::aq_eco2_fix_seeds {11 23 37} }
+        if { ![info exists ::aq_eco2_fix_iters] } { set ::aq_eco2_fix_iters 24 }
+        if { ![info exists ::aq_eco2_fix_budget] } { set ::aq_eco2_fix_budget 285 }
+        proc ::aq_eco2_drc { f } {
+            # the violations in a detailed_route -output_drc report: {{net net ...} {x1 y1 x2 y2}} per violation
+            set out {}
+            if { ![file exists $f] } { return $out }
+            set fh [open $f r]
+            set nets {}
+            while { [gets $fh line] >= 0 } {
+                if { [regexp {srcs:(.*)} $line -> s] } {
+                    set nets [regexp -all -inline {net:\S+} $s]
+                    set nets [lmap x $nets { string range $x 4 end }]
+                } elseif { [regexp {bbox = \(([-0-9.]+), ([-0-9.]+)\) - \(([-0-9.]+), ([-0-9.]+)\)} $line -> x1 y1 x2 y2] } {
+                    lappend out [list $nets [list $x1 $y1 $x2 $y2]]
+                    set nets {}
+                }
+            }
+            close $fh
+            return $out
+        }
         proc ::aq_eco2_route {} {
+            # a: the step's arguments minus -droute_end_iter (ser43/ser44's stage-2 route, which keeps -or_seed 42);
+            # b: a minus -or_seed too, for the short-fix routes
             set a {}
+            set b {}
             set skip 0
+            set skipb 0
             foreach x $::aq_drt_last_args {
-                if { $skip } { set skip 0; continue }
+                if { $skip } { set skip 0; set skipb 0; continue }
                 if { $x eq "-droute_end_iter" } { set skip 1; continue }
                 lappend a $x
+                if { $skipb } { set skipb 0; continue }
+                if { $x eq "-or_seed" } { set skipb 1; continue }
+                lappend b $x
             }
-            set r [::aq_drt_orig {*}$a -droute_end_iter $::aq_eco2_iters]
-            # as drt.tcl's drt_run does: the step-level DRC report is the latest route's
             set i [lsearch -exact $a -output_drc]
-            if { $i >= 0 && [file exists [lindex $a [expr { $i + 1 }]]] } {
-                set f [lindex $a [expr { $i + 1 }]]
+            set f [expr { $i >= 0 ? [lindex $a [expr { $i + 1 }]] : "" }]
+            # a route that ends clean may leave no report: never read the previous route's
+            if { $f ne "" } { file delete -force $f }
+            set r [::aq_drt_orig {*}$a -droute_end_iter $::aq_eco2_iters]
+            set block [ord::get_db_block]
+            set dbu [[[ord::get_db] getTech] getDbUnitsPerMicron]
+            for { set k 1 } { $k <= $::aq_eco2_fix_tries } { incr k } {
+                set viols [::aq_eco2_drc $f]
+                if { ![llength $viols] } { break }
+                set el [expr { ([clock seconds] - $::aq_drt_t0) / 60 }]
+                if { $el > $::aq_eco2_fix_budget } {
+                    puts "\[WARNING] aquafuse pnr.sdc: stage-2 short fix: [llength $viols] violations left, $el min into the\
+                          step (budget $::aq_eco2_fix_budget); no attempt $k"
+                    break
+                }
+                set rad [expr { round($::aq_eco2_fix_um * $k * $dbu) }]
+                set rip [dict create]
+                foreach v $viols {
+                    lassign $v nets bb
+                    foreach n $nets { dict set rip $n 1 }
+                    lassign [lmap c $bb { expr { round($c * $dbu) } }] x1 y1 x2 y2
+                    foreach inst [$block getInsts] {
+                        set b [$inst getBBox]
+                        if { [$b xMax] < $x1 - $rad || [$b xMin] > $x2 + $rad
+                             || [$b yMax] < $y1 - $rad || [$b yMin] > $y2 + $rad } { continue }
+                        foreach it [$inst getITerms] {
+                            set net [$it getNet]
+                            if { $net eq "NULL" || $net eq "" } { continue }
+                            dict set rip [$net getName] 1
+                        }
+                    }
+                }
+                set nrip 0
+                foreach n [dict keys $rip] {
+                    set net [$block findNet $n]
+                    if { $net eq "NULL" || $net eq "" } { continue }
+                    if { [$net getSigType] in {POWER GROUND} || [$net isSpecial] } { continue }
+                    set w [$net getWire]
+                    if { $w ne "NULL" && $w ne "" } { odb::dbWire_destroy $w; incr nrip }
+                }
+                set seed [lindex $::aq_eco2_fix_seeds [expr { ($k - 1) % [llength $::aq_eco2_fix_seeds] }]]
+                puts "\[INFO] aquafuse pnr.sdc: stage-2 short fix $k: [llength $viols] violations, $nrip nets within\
+                      [expr { $::aq_eco2_fix_um * $k }] um ripped up, -or_seed $seed, $el min into the step"
+                if { [catch { ::aq_eco_grt_full } err] } {
+                    puts "\[WARNING] aquafuse pnr.sdc: stage-2 short fix: global routing failed ($err); routing on old guides"
+                }
+                if { $f ne "" } { file delete -force $f }
+                set r [::aq_drt_orig {*}$b -or_seed $seed -droute_end_iter $::aq_eco2_fix_iters]
+            }
+            puts "\[INFO] aquafuse pnr.sdc: stage-2 route left [llength [::aq_eco2_drc $f]] violations"
+            # as drt.tcl's drt_run does: the step-level DRC report is the latest route's
+            if { $f ne "" && [file exists $f] } {
                 file copy -force $f [file join $::env(STEP_DIR) [file tail $f]]
             }
             return $r
