@@ -516,9 +516,9 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
                     foreach n $nets { dict set rip $n 1 }
                     lassign [lmap c $bb { expr { round($c * $dbu) } }] x1 y1 x2 y2
                     foreach inst [$block getInsts] {
-                        set b [$inst getBBox]
-                        if { [$b xMax] < $x1 - $rad || [$b xMin] > $x2 + $rad
-                             || [$b yMax] < $y1 - $rad || [$b yMin] > $y2 + $rad } { continue }
+                        set ib [$inst getBBox]
+                        if { [$ib xMax] < $x1 - $rad || [$ib xMin] > $x2 + $rad
+                             || [$ib yMax] < $y1 - $rad || [$ib yMin] > $y2 + $rad } { continue }
                         foreach it [$inst getITerms] {
                             set net [$it getNet]
                             if { $net eq "NULL" || $net eq "" } { continue }
