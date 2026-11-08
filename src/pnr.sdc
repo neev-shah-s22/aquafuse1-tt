@@ -208,6 +208,14 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
         }
     }
 
+    proc ::aq_eco_iterm_connect { it net } {
+        # dbITerm member connect/disconnect (OpenROAD 2023+), else the older static form
+        if { [catch { $it disconnect; $it connect $net } err] } {
+            puts "\[INFO] aquafuse pnr.sdc: dbITerm connect member form failed ($err); static form"
+            odb::dbITerm_disconnect $it
+            odb::dbITerm_connect $it $net
+        }
+    }
     proc ::aq_eco_apply {} {
         set block [ord::get_db_block]
         set db [ord::get_db]
@@ -248,6 +256,51 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
             }
             puts "\[INFO] aquafuse pnr.sdc: post-route ECO stage $stage: $ns swaps"
             incr nswap $ns
+        }
+        # ser47 (8 Nov): buffer insertion, ::aq_eco_lists key "buffers", entries {driver_inst driver_pin buffer_master}.
+        # ser42 and ser46 both left _10650_ (_27526_ aoi221_4, already the largest, to _27527_/A4, 136 um apart) at
+        # 8.04 vs 7.80 ns on max_ss: the router takes it ~400 um up and back (~950 um of wire). A buffer beside the
+        # driver drives that wire instead: driver pin -> new net -> buffer I; buffer Z -> the old net. The buffer is
+        # placed right of the driver in its row and legalized below with everything else; both nets are ripped up.
+        if { [dict exists $::aq_eco_lists buffers] } {
+            set nb 0
+            foreach e [dict get $::aq_eco_lists buffers] {
+                lassign $e dname dpin bm
+                if { ![dict exists $byname $dname] } { lappend missing $dname; continue }
+                set dinst [dict get $byname $dname]
+                set it [$dinst findITerm $dpin]
+                if { $it eq "NULL" || $it eq "" } { error "aquafuse pnr.sdc: no pin $dpin on $dname" }
+                set onet [$it getNet]
+                set m [$db findMaster $bm]
+                if { $m eq "NULL" || $m eq "" } { error "aquafuse pnr.sdc: no master $bm" }
+                incr nb
+                set bname "aq_eco_buf_$nb"
+                set binst [odb::dbInst_create $block $m $bname]
+                set nnet [odb::dbNet_create $block "aq_eco_bufnet_$nb"]
+                $nnet setSigType SIGNAL
+                set w [$onet getWire]
+                if { $w ne "NULL" && $w ne "" } { odb::dbWire_destroy $w }
+                ::aq_eco_iterm_connect $it $nnet
+                ::aq_eco_iterm_connect [$binst findITerm I] $nnet
+                ::aq_eco_iterm_connect [$binst findITerm Z] $onet
+                # power pins straight to the driver's own supply nets (VDD/VSS/VNW/VPW by name), not via global_connect
+                foreach bit [$binst getITerms] {
+                    if { [[$bit getMTerm] getSigType] ni {POWER GROUND} } { continue }
+                    set dit [$dinst findITerm [[$bit getMTerm] getName]]
+                    if { $dit eq "NULL" || $dit eq "" } { continue }
+                    set pn [$dit getNet]
+                    if { $pn ne "NULL" && $pn ne "" } { ::aq_eco_iterm_connect $bit $pn }
+                }
+                lassign [$dinst getLocation] dx dy
+                $binst setOrient [$dinst getOrient]
+                $binst setLocation [expr { $dx + [[$dinst getMaster] getWidth] }] $dy
+                $binst setPlacementStatus PLACED
+                dict set touched $bname 1
+                dict set touched [$dinst getName] 1
+                puts "\[INFO] aquafuse pnr.sdc: post-route ECO: $bname ($bm) inserted on $dname/$dpin (net\
+                      [$onet getName], driver side now [$nnet getName])"
+            }
+            incr nswap $nb
         }
         if { [llength $missing] > 0 } {
             puts "\[WARNING] aquafuse pnr.sdc: post-route ECO: [llength $missing] instances not in this layout: [lrange $missing 0 20]"
@@ -550,32 +603,51 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
             }
             return $r
         }
+        proc ::aq_eco_stage_run { file label } {
+            set ::aq_eco_file $file
+            if { [info exists ::aq_eco_moves] } { unset ::aq_eco_moves }
+            set ::aq_eco_mode post
+            set ::aq_eco_ripup 1
+            set ::aq_eco_regrt full
+            set ::aq_eco_dpl 1
+            puts "\[INFO] aquafuse pnr.sdc: $label ECO on the finished route from $file"
+            set n [::aq_eco_apply]
+            if { $n > 0 } {
+                ::aq_eco2_route
+                set ca [expr { [llength [info commands ::aq_ca_orig]] ? "::aq_ca_orig" : "check_antennas" }]
+                for { set k 1 } { $k <= $::aq_eco2_ant_passes && [$ca] } { incr k } {
+                    set diode [lindex [split $::env(DIODE_CELL) "/"] 0]
+                    set ra [list $diode -ratio_margin 0]
+                    if { [info exists ::env(GRT_ALLOW_CONGESTION)] && $::env(GRT_ALLOW_CONGESTION) } {
+                        lappend ra -allow_congestion
+                    }
+                    set d [repair_antennas {*}$ra]
+                    puts "\[INFO] aquafuse pnr.sdc: $label antenna repair $k: $d diodes"
+                    if { !$d } { break }
+                    ::aq_eco2_route
+                }
+                puts "\[INFO] aquafuse pnr.sdc: $label ECO done ($n changes)"
+            }
+        }
+        # ser47 (8 Nov): stage 3, src/eco_list3.tcl, on the finished stage-2 route. Stage 2 is unchanged, so it reproduces
+        # ser46's route (as ser45 reproduced ser44's); stage 3 then carries only the changes picked on ser46's own wiring,
+        # a much smaller disturbance than adding them to stage 2 (ser46: 43 swaps moved 308 cells and re-drew enough
+        # nets that 12 new swaps were needed). It starts only before ::aq_eco3_budget minutes into the step (ser46 on a
+        # fast runner: stage 2 done at 143 min; ser44 on a slow one: 273 min), otherwise the build is ser46's.
+        if { ![info exists ::aq_eco3_budget] } { set ::aq_eco3_budget 200 }
+        set ::aq_eco3_file [file join [file dirname $::env(_SDC_IN)] eco_list3.tcl]
         proc ::write_views { args } {
             if { !$::aq_eco2_done } {
                 set ::aq_eco2_done 1
-                set ::aq_eco_file $::aq_eco2_file
-                if { [info exists ::aq_eco_moves] } { unset ::aq_eco_moves }
-                set ::aq_eco_mode post
-                set ::aq_eco_ripup 1
-                set ::aq_eco_regrt full
-                set ::aq_eco_dpl 1
-                puts "\[INFO] aquafuse pnr.sdc: stage-2 ECO (ser43) on the finished route from $::aq_eco2_file"
-                set n [::aq_eco_apply]
-                if { $n > 0 } {
-                    ::aq_eco2_route
-                    set ca [expr { [llength [info commands ::aq_ca_orig]] ? "::aq_ca_orig" : "check_antennas" }]
-                    for { set k 1 } { $k <= $::aq_eco2_ant_passes && [$ca] } { incr k } {
-                        set diode [lindex [split $::env(DIODE_CELL) "/"] 0]
-                        set ra [list $diode -ratio_margin 0]
-                        if { [info exists ::env(GRT_ALLOW_CONGESTION)] && $::env(GRT_ALLOW_CONGESTION) } {
-                            lappend ra -allow_congestion
-                        }
-                        set d [repair_antennas {*}$ra]
-                        puts "\[INFO] aquafuse pnr.sdc: stage-2 antenna repair $k: $d diodes"
-                        if { !$d } { break }
-                        ::aq_eco2_route
+                ::aq_eco_stage_run $::aq_eco2_file stage-2
+                if { [file exists $::aq_eco3_file] } {
+                    set el [expr { ([clock seconds] - $::aq_drt_t0) / 60 }]
+                    if { $el < $::aq_eco3_budget } {
+                        ::aq_eco_stage_run $::aq_eco3_file stage-3
+                    } else {
+                        puts "\[WARNING] aquafuse pnr.sdc: stage 3 skipped: $el min into the step (budget\
+                              $::aq_eco3_budget); this build is stage 2 only"
                     }
-                    puts "\[INFO] aquafuse pnr.sdc: stage-2 ECO done ($n swaps)"
                 }
             }
             return [uplevel 1 [list ::aq_wv_orig {*}$args]]
