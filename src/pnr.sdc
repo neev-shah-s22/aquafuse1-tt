@@ -262,6 +262,9 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
         # 8.04 vs 7.80 ns on max_ss: the router takes it ~400 um up and back (~950 um of wire). A buffer beside the
         # driver drives that wire instead: driver pin -> new net -> buffer I; buffer Z -> the old net. The buffer is
         # placed right of the driver in its row and legalized below with everything else; both nets are ripped up.
+        # ser48: buffer names count across stages (stage 3's is aq_eco_buf_1, stage 4's aq_eco_buf_2), so a later stage
+        # never asks dbInst_create for a name that is already taken
+        if { ![info exists ::aq_eco_nbuf] } { set ::aq_eco_nbuf 0 }
         if { [dict exists $::aq_eco_lists buffers] } {
             set nb 0
             foreach e [dict get $::aq_eco_lists buffers] {
@@ -274,9 +277,12 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
                 set m [$db findMaster $bm]
                 if { $m eq "NULL" || $m eq "" } { error "aquafuse pnr.sdc: no master $bm" }
                 incr nb
-                set bname "aq_eco_buf_$nb"
+                incr ::aq_eco_nbuf
+                set bname "aq_eco_buf_$::aq_eco_nbuf"
                 set binst [odb::dbInst_create $block $m $bname]
-                set nnet [odb::dbNet_create $block "aq_eco_bufnet_$nb"]
+                if { $binst eq "NULL" || $binst eq "" } { error "aquafuse pnr.sdc: could not create $bname" }
+                set nnet [odb::dbNet_create $block "aq_eco_bufnet_$::aq_eco_nbuf"]
+                if { $nnet eq "NULL" || $nnet eq "" } { error "aquafuse pnr.sdc: could not create aq_eco_bufnet_$::aq_eco_nbuf" }
                 $nnet setSigType SIGNAL
                 set w [$onet getWire]
                 if { $w ne "NULL" && $w ne "" } { odb::dbWire_destroy $w }
@@ -634,20 +640,32 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
         # a much smaller disturbance than adding them to stage 2 (ser46: 43 swaps moved 308 cells and re-drew enough
         # nets that 12 new swaps were needed). It starts only before ::aq_eco3_budget minutes into the step (ser46 on a
         # fast runner: stage 2 done at 143 min; ser44 on a slow one: 273 min), otherwise the build is ser46's.
+        # ser48 (8 Nov): stage 4, src/eco_list4.tcl, on the finished stage-3 route, same idea one level down: stages 2 and
+        # 3 are unchanged, so they reproduce ser47's route; stage 4 carries only what ser47's own wiring still needed (9
+        # swaps + buf_8 on _16973_/ZN). ser47: stage 3 ran 149-177 min into the step, job 3 h 40 min. Stage 4 runs only
+        # if stage 3 ran (its list was picked on a stage-3 route) and only before ::aq_eco4_budget minutes.
         if { ![info exists ::aq_eco3_budget] } { set ::aq_eco3_budget 200 }
-        set ::aq_eco3_file [file join [file dirname $::env(_SDC_IN)] eco_list3.tcl]
+        if { ![info exists ::aq_eco4_budget] } { set ::aq_eco4_budget 240 }
+        set ::aq_eco_later [list]
+        foreach {k lb} {3 aq_eco3_budget 4 aq_eco4_budget} {
+            lappend ::aq_eco_later [list $k [file join [file dirname $::env(_SDC_IN)] eco_list$k.tcl] [set ::$lb]]
+        }
         proc ::write_views { args } {
             if { !$::aq_eco2_done } {
                 set ::aq_eco2_done 1
                 ::aq_eco_stage_run $::aq_eco2_file stage-2
-                if { [file exists $::aq_eco3_file] } {
+                set last 2
+                foreach st $::aq_eco_later {
+                    lassign $st k f budget
+                    if { ![file exists $f] } { break }
                     set el [expr { ([clock seconds] - $::aq_drt_t0) / 60 }]
-                    if { $el < $::aq_eco3_budget } {
-                        ::aq_eco_stage_run $::aq_eco3_file stage-3
-                    } else {
-                        puts "\[WARNING] aquafuse pnr.sdc: stage 3 skipped: $el min into the step (budget\
-                              $::aq_eco3_budget); this build is stage 2 only"
+                    if { $el >= $budget } {
+                        puts "\[WARNING] aquafuse pnr.sdc: stage $k skipped: $el min into the step (budget\
+                              $budget); this build is stages 1-$last only"
+                        break
                     }
+                    ::aq_eco_stage_run $f stage-$k
+                    set last $k
                 }
             }
             return [uplevel 1 [list ::aq_wv_orig {*}$args]]
