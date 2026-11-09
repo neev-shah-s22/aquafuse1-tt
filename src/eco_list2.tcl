@@ -1,11 +1,14 @@
-# ser46 (8 Nov): plus 17 swaps picked on ser44's own wiring (VPS ser44c_r1.swaps; OpenSTA on gds run 42438275953's
-# unpowered final/nl + signoff SDC 426fd8a9 + min/nom/max SPEF, 9 corners), which already carried the 26 above: with
-# them every update-18 term is met (tt control 0, data 0, out 0, lib 0; hold >= +0.1217 ns; latch-aware setup >=
-# 36.96 ns, 0 violated). ser44's 26 alone left tt control 5/5/46 (worst 5.55 ns), data 6-35, out 1 (max_ss).
-# ser43 (7 Nov, DR013 update 19): stage-2 ECO list, applied on the finished route just before write_views. 26 swaps
-# picked on ser42's own wiring (VPS ser42c_r1.swaps; OpenSTA on gds run 42331237161's unpowered final/nl + signoff SDC
-# 426fd8a9 + min/nom/max SPEF, 9 corners): with them every DR013 update-18 term is met except 2 data pins at max_ss
-# (_10650_, 7.81 vs 7.80 ns: a 0.187 pF router detour that stage 2 re-routes); hold >= +0.1502 ns, latch 0 violated.
+# ser52 (9 Nov, DR013 update 19): stages 2-5 folded into one stage-2 list, applied on the finished first route (stage 1,
+# unchanged). Each post-route stage costs a full global + detailed re-route (35-60 min on GitHub runners); ser49 needed
+# 5 h 56 min of the 6 h cap, main 470b42a skipped stage 5 at 263 min and ser50 was cancelled by the cap during stage 5.
+# One post-route stage instead of four saves about 2 h. Run beside ser51 (stages 3-5 folded, stage 2 kept).
+# Entries, in their old stage order (a later entry for the same instance wins, as it did across stages):
+#   ser46's stage 2 (43 swaps, picked on ser42/ser44 wiring), ser47's stage 3 (12 + buf_8 on _27526_/ZN), ser48's
+#   stage 4 (9 + buf_8 on _16973_/ZN), ser50's stage 5 (18).
+# These were picked on wirings this build will not have; this build's own wiring is audited before any use.
+# In-row fit on, 80 um reach (ser50), so grown cells take free sites in their own row before legalization moves others.
+set ::aq_eco_fit 1
+set ::aq_eco_fit_um 80.0
 set ::aq_eco_lists [dict create]
 dict set ::aq_eco_lists all [list \
     {_16279_ gf180mcu_fd_sc_mcu7t5v0__clkinv_2} \
@@ -51,4 +54,47 @@ dict set ::aq_eco_lists all [list \
     {clkbuf_2_0__f_genblk1.g_bg_cell.u_bg.g_ent[47].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
     {clkbuf_2_1__f_genblk1.g_bg_cell.u_bg.g_ent[6].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
     {clkbuf_2_1__f_genblk1.g_bg_cell.u_bg.g_ent[7].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
+    {_17014_ gf180mcu_fd_sc_mcu7t5v0__nor2_4} \
+    {_17030_ gf180mcu_fd_sc_mcu7t5v0__nor2_4} \
+    {_17077_ gf180mcu_fd_sc_mcu7t5v0__nor2_4} \
+    {_27165_ gf180mcu_fd_sc_mcu7t5v0__xnor2_2} \
+    {_27356_ gf180mcu_fd_sc_mcu7t5v0__nor2_2} \
+    {clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[77].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_4} \
+    {clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[82].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_4} \
+    {clkbuf_0_u_stem.g_col[0].u_lat.en gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
+    {clkbuf_1_0__f_u_b1.g_slot[0].g_col[1].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
+    {clkbuf_2_1__f_genblk1.g_bg_cell.u_bg.g_ent[0].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
+    {clkbuf_2_1__f_genblk1.g_bg_cell.u_bg.g_ent[49].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
+    {fanout905 gf180mcu_fd_sc_mcu7t5v0__buf_2} \
+    {_17020_ gf180mcu_fd_sc_mcu7t5v0__nor2_2} \
+    {_17069_ gf180mcu_fd_sc_mcu7t5v0__nor2_4} \
+    {_25370_ gf180mcu_fd_sc_mcu7t5v0__nand2_2} \
+    {_27816_ gf180mcu_fd_sc_mcu7t5v0__aoi221_2} \
+    {clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[21].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_8} \
+    {clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[70].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
+    {clkbuf_0_u_stem.g_col[0].u_lat.en gf180mcu_fd_sc_mcu7t5v0__clkbuf_8} \
+    {clkbuf_1_1__f__16260_ gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
+    {clkbuf_2_3__f_genblk1.g_bg_cell.u_bg.g_ent[76].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
+    {_16747_ gf180mcu_fd_sc_mcu7t5v0__nor2_2} \
+    {_16800_ gf180mcu_fd_sc_mcu7t5v0__nor3_4} \
+    {_16843_ gf180mcu_fd_sc_mcu7t5v0__nand2_2} \
+    {_17048_ gf180mcu_fd_sc_mcu7t5v0__nor2_2} \
+    {_17071_ gf180mcu_fd_sc_mcu7t5v0__nor2_2} \
+    {_20157_ gf180mcu_fd_sc_mcu7t5v0__nor2_2} \
+    {_20162_ gf180mcu_fd_sc_mcu7t5v0__nand4_2} \
+    {_20181_ gf180mcu_fd_sc_mcu7t5v0__nand3_2} \
+    {_25485_ gf180mcu_fd_sc_mcu7t5v0__nor2_4} \
+    {clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[86].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_8} \
+    {clkbuf_2_2__f_genblk1.g_bg_cell.u_bg.g_ent[55].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_3} \
+    {hold1776 gf180mcu_fd_sc_mcu7t5v0__clkbuf_2} \
+    {u_b1.u_wg.u_idx.g_bit[5].u_l gf180mcu_fd_sc_mcu7t5v0__latq_2} \
+    {_17081_ gf180mcu_fd_sc_mcu7t5v0__nor2_2} \
+    {_19013_ gf180mcu_fd_sc_mcu7t5v0__xor2_2} \
+    {_20450_ gf180mcu_fd_sc_mcu7t5v0__nand4_2} \
+    {_27394_ gf180mcu_fd_sc_mcu7t5v0__oai21_2} \
+    {clkbuf_0_genblk1.g_bg_cell.u_bg.g_ent[83].gclk gf180mcu_fd_sc_mcu7t5v0__clkbuf_4} \
+]
+dict set ::aq_eco_lists buffers [list \
+    {_27526_ ZN gf180mcu_fd_sc_mcu7t5v0__buf_8} \
+    {_16973_ ZN gf180mcu_fd_sc_mcu7t5v0__buf_8} \
 ]
