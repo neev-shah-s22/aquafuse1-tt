@@ -216,6 +216,72 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
             odb::dbITerm_connect $it $net
         }
     }
+    # ser49 (8 Nov): in-row fit. ser47/ser48 showed the residue comes from legalization, not the swaps: 13 and 10
+    # changes moved 123 and 295 neighbours, ripping 339 and 819 nets, and the re-drawn wires left ~10 new swaps each
+    # time. With ::aq_eco_fit 1 (set by a list file), each grown or new cell is first slid to the nearest free,
+    # site-aligned span of its own row (within ::aq_eco_fit_um), so no neighbour moves; detailed_placement still runs
+    # after and only has work if a cell found no free span. Same row, so orientation is unchanged.
+    if { ![info exists ::aq_eco_fit_um] } { set ::aq_eco_fit_um 40.0 }
+    proc ::aq_eco_fit_cells { block insts } {
+        set dbu [[[ord::get_db] getTech] getDbUnitsPerMicron]
+        set reach [expr { int($::aq_eco_fit_um * $dbu) }]
+        # rows by origin y: {x_lo x_hi site_w}
+        set rows [dict create]
+        foreach r [$block getRows] {
+            lassign [$r getOrigin] ox oy
+            set sw [[$r getSite] getWidth]
+            dict set rows $oy [list $ox [expr { $ox + [$r getSiteCount] * $sw }] $sw]
+        }
+        # occupancy by row y: list of {x1 x2 inst-name}
+        set occ [dict create]
+        foreach i [$block getInsts] {
+            set b [$i getBBox]
+            dict lappend occ [$b yMin] [list [$b xMin] [$b xMax] [$i getName]]
+        }
+        set nfit 0
+        set nleft 0
+        set disp 0
+        foreach inst $insts {
+            set b [$inst getBBox]
+            set y [$b yMin]
+            set x0 [$b xMin]
+            set w [expr { [$b xMax] - $x0 }]
+            set me [$inst getName]
+            if { ![dict exists $rows $y] } { incr nleft; continue }
+            lassign [dict get $rows $y] rlo rhi sw
+            set others {}
+            foreach o [dict get $occ $y] {
+                if { [lindex $o 2] ne $me && [lindex $o 1] > $x0 - $reach - $w && [lindex $o 0] < $x0 + $reach + $w } {
+                    lappend others $o
+                }
+            }
+            set best ""
+            for { set d 0 } { $d <= $reach && $best eq "" } { incr d $sw } {
+                foreach x [list [expr { $x0 - $d }] [expr { $x0 + $d }]] {
+                    if { $x < $rlo || $x + $w > $rhi || ($x - $rlo) % $sw != 0 } { continue }
+                    set clear 1
+                    foreach o $others {
+                        if { [lindex $o 0] < $x + $w && [lindex $o 1] > $x } { set clear 0; break }
+                    }
+                    if { $clear } { set best $x; break }
+                }
+            }
+            if { $best eq "" } { incr nleft; continue }
+            if { $best != $x0 } {
+                lassign [$inst getLocation] lx ly
+                $inst setLocation [expr { $lx + $best - $x0 }] $ly
+                set disp [expr { $disp + abs($best - $x0) }]
+            }
+            # the row list keeps this cell at its new span for the cells fitted after it
+            set nl {}
+            foreach o [dict get $occ $y] { if { [lindex $o 2] ne $me } { lappend nl $o } }
+            lappend nl [list $best [expr { $best + $w }] $me]
+            dict set occ $y $nl
+            incr nfit
+        }
+        puts "\[INFO] aquafuse pnr.sdc: post-route ECO: in-row fit placed $nfit cells in free sites\
+              ([format %.1f [expr { $disp / double($dbu) }]] um total), $nleft left to legalization"
+    }
     proc ::aq_eco_apply {} {
         set block [ord::get_db_block]
         set db [ord::get_db]
@@ -331,6 +397,14 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
             set inst [dict get $byname $name]
             lappend locked [list $inst [$inst getPlacementStatus]]
             $inst setPlacementStatus LOCKED
+        }
+        if { [info exists ::aq_eco_fit] && $::aq_eco_fit } {
+            set fl {}
+            foreach n [dict keys $touched] {
+                set i [$block findInst $n]
+                if { $i ne "NULL" && $i ne "" && [$i getPlacementStatus] ni {FIRM LOCKED COVER} } { lappend fl $i }
+            }
+            ::aq_eco_fit_cells $block $fl
         }
         ::aq_eco_report_watch before
         global_connect
@@ -616,6 +690,7 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
             set ::aq_eco_ripup 1
             set ::aq_eco_regrt full
             set ::aq_eco_dpl 1
+            set ::aq_eco_fit 0     ;# a list file turns the in-row fit on for its own stage only
             puts "\[INFO] aquafuse pnr.sdc: $label ECO on the finished route from $file"
             set n [::aq_eco_apply]
             if { $n > 0 } {
@@ -646,8 +721,11 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
         # if stage 3 ran (its list was picked on a stage-3 route) and only before ::aq_eco4_budget minutes.
         if { ![info exists ::aq_eco3_budget] } { set ::aq_eco3_budget 200 }
         if { ![info exists ::aq_eco4_budget] } { set ::aq_eco4_budget 240 }
+        # ser49 (8 Nov): stage 5, src/eco_list5.tcl, on the finished stage-4 route (ser48's): ser48's 13 own-wiring swaps
+        # with the in-row fit on (see ::aq_eco_fit_cells). ser48: stage 4 ran 169-199 min into the step, job 4 h 02 min.
+        if { ![info exists ::aq_eco5_budget] } { set ::aq_eco5_budget 260 }
         set ::aq_eco_later [list]
-        foreach {k lb} {3 aq_eco3_budget 4 aq_eco4_budget} {
+        foreach {k lb} {3 aq_eco3_budget 4 aq_eco4_budget 5 aq_eco5_budget} {
             lappend ::aq_eco_later [list $k [file join [file dirname $::env(_SDC_IN)] eco_list$k.tcl] [set ::$lb]]
         }
         proc ::write_views { args } {
