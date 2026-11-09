@@ -719,7 +719,10 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
         # 3 are unchanged, so they reproduce ser47's route; stage 4 carries only what ser47's own wiring still needed (9
         # swaps + buf_8 on _16973_/ZN). ser47: stage 3 ran 149-177 min into the step, job 3 h 40 min. Stage 4 runs only
         # if stage 3 ran (its list was picked on a stage-3 route) and only before ::aq_eco4_budget minutes.
-        if { ![info exists ::aq_eco3_budget] } { set ::aq_eco3_budget 200 }
+        # ser51 (9 Nov): stages 3-5 folded into one stage-3 list (src/eco_list3.tcl; eco_list4/5.tcl removed, so the
+        # loop below stops after stage 3). Its budget goes 200 -> 225: on main 470b42a's runner stage 3 started at 189
+        # min and a re-route ran 35-60 min, so 225 + 60 min + ~45 min before the step + ~10 min after ends under 6 h.
+        if { ![info exists ::aq_eco3_budget] } { set ::aq_eco3_budget 225 }
         if { ![info exists ::aq_eco4_budget] } { set ::aq_eco4_budget 240 }
         # ser49 (8 Nov): stage 5, src/eco_list5.tcl, on the finished stage-4 route (ser48's): ser48's 13 own-wiring swaps
         # with the in-row fit on (see ::aq_eco_fit_cells). ser48: stage 4 ran 169-199 min into the step, job 4 h 02 min.
