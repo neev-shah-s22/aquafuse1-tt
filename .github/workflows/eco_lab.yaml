@@ -1,6 +1,6 @@
 name: eco_lab
 
-# ECO lab 5 (10 Nov, DR013 update 19). Re-runs only LibreLane's DetailedRouting -> STAPostPNR steps on ser52's FINISHED
+# ECO lab 6 (10 Nov; lab 5 before it, DR013 update 19). Re-runs only LibreLane's DetailedRouting -> STAPostPNR steps on ser52's FINISHED
 # route (gds run 42665224772, restored from its GDS_logs artifact; its DetailedRouting state_out is the post-stage-2
 # ODB). The first route is skipped (lab_post) and a no-op first ECO re-makes global routing in this process, as a real
 # build's stage 2 leaves it. Then src/pnr.sdc's own stage hook (::aq_eco_stage_run, the code a build's stage 3 would run)
@@ -23,8 +23,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # run 42832955895 ran fo_incr, fo_full, fo_none and conv; its "null" entry was read by YAML as a null value
-        variant: [nochange]
+        # ECO lab 6: the final-stage list with the segment slide (lab 5: runs 42832955895, 42833467867)
+        variant: [s3_none, s3_incr]
     steps:
       - name: checkout repo
         uses: actions/checkout@v6
@@ -89,7 +89,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: eco_lab5_${{ matrix.variant }}
+          name: eco_lab6_${{ matrix.variant }}
           path: |
             runs/lab/**/*.log
             runs/lab/**/*.rpt

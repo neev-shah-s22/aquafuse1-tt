@@ -271,6 +271,69 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
                     if { $clear } { set best $x; break }
                 }
             }
+            if { $best eq "" && [info exists ::aq_eco_fit_slide] && $::aq_eco_fit_slide > 0 } {
+                # ECO lab 5 follow-up (10 Nov): no free span, but the cell's own tap segment (cells between the nearest
+                # fixed cells: taps, endcaps) may hold enough free sites in pieces (lab5fonone: 13 for 7, 6 for 6). Pack
+                # the segment in order with each cell as close to where it is as possible (forward pass, then a
+                # backward pass against the segment's right end); give up if it does not fit or would move more than
+                # ::aq_eco_fit_slide cells. The moved cells' nets are ripped up by ::aq_eco_apply's moved-cell check.
+                set srt [lsort -integer -index 0 [dict get $occ $y]]
+                set mi -1
+                for { set k 0 } { $k < [llength $srt] } { incr k } {
+                    if { [lindex $srt $k 2] eq $me } { set mi $k; break }
+                }
+                set isfixed {}
+                foreach o $srt {
+                    set oi [$block findInst [lindex $o 2]]
+                    lappend isfixed [expr { [$oi getPlacementStatus] in {FIRM LOCKED COVER}
+                                            || [regexp {filltie|endcap} [[$oi getMaster] getName]] }]
+                }
+                set a $mi
+                while { $a > 0 && ![lindex $isfixed [expr { $a - 1 }]] } { incr a -1 }
+                set z $mi
+                while { $z < [llength $srt] - 1 && ![lindex $isfixed [expr { $z + 1 }]] } { incr z }
+                set lo [expr { $a > 0 ? [lindex $srt [expr { $a - 1 }] 1] : $rlo }]
+                set hi [expr { $z < [llength $srt] - 1 ? [lindex $srt [expr { $z + 1 }] 0] : $rhi }]
+                set seg [lrange $srt $a $z]
+                set xs {}
+                set prev $lo
+                foreach o $seg {
+                    set nx [expr { max([lindex $o 0], $prev) }]
+                    lappend xs $nx
+                    set prev [expr { $nx + [lindex $o 1] - [lindex $o 0] }]
+                }
+                set nxt $hi
+                for { set k [expr { [llength $seg] - 1 }] } { $k >= 0 } { incr k -1 } {
+                    set o [lindex $seg $k]
+                    set ow [expr { [lindex $o 1] - [lindex $o 0] }]
+                    set nx [expr { min([lindex $xs $k], $nxt - $ow) }]
+                    lset xs $k $nx
+                    set nxt $nx
+                }
+                set nmv 0
+                foreach o $seg nx $xs { if { $nx != [lindex $o 0] } { incr nmv } }
+                if { [lindex $xs 0] >= $lo && $nmv <= $::aq_eco_fit_slide } {
+                    set nl {}
+                    foreach o [dict get $occ $y] { if { [lindex $o 0] < $lo || [lindex $o 0] >= $hi } { lappend nl $o } }
+                    foreach o $seg nx $xs {
+                        set ow [expr { [lindex $o 1] - [lindex $o 0] }]
+                        if { $nx != [lindex $o 0] } {
+                            set oi [$block findInst [lindex $o 2]]
+                            lassign [$oi getLocation] lx ly
+                            $oi setLocation [expr { $lx + $nx - [lindex $o 0] }] $ly
+                            set disp [expr { $disp + abs($nx - [lindex $o 0]) }]
+                        }
+                        lappend nl [list $nx [expr { $nx + $ow }] [lindex $o 2]]
+                    }
+                    dict set occ $y $nl
+                    puts "\[INFO] aquafuse pnr.sdc: post-route ECO: segment slide for $me: $nmv cells moved in\
+                          [format %.2f [expr { $lo / double($dbu) }]]-[format %.2f [expr { $hi / double($dbu) }]] um"
+                    incr nfit
+                    continue
+                }
+                puts "\[INFO] aquafuse pnr.sdc: post-route ECO: segment slide for $me failed ([llength $seg] cells,\
+                      [expr { [lindex $xs 0] >= $lo ? "$nmv to move" : "not enough free sites" }])"
+            }
             if { $best eq "" } { incr nleft; lappend unfit $inst; continue }
             if { $best != $x0 } {
                 lassign [$inst getLocation] lx ly
