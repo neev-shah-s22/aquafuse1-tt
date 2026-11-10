@@ -107,6 +107,14 @@ set ::aq_drt_ant_iters 0
 set ::aq_eco2_ant_passes 6
 set ::aq_drt_ant_margin 10
 set ::aq_drt_budget_min 245
+# ser55 (10 Nov, DR013 update 19): stage 3 is ECO lab 6's fit-only list (no legalization, guides kept, ~9-40 nets
+# re-routed). ser52 on a slow runner: DetailedRouting began 54 min into the job, stage 2 was done 269 min into the step,
+# and 8 min of steps followed. Stage 3 starts only before 275 min into the step, so it ends ~10 min later inside the 6 h
+# cap; on a later start the build is ser52's (stages 1-2).
+set ::aq_eco3_budget 275
+# A short-fix attempt (full global route + up to 24 iterations, ~20-40 min) starting after 270 min would run into the
+# cap; ser52's stage 2 needed none, and lab 5/6's fit-only routes ended at 0 violations.
+set ::aq_eco2_fix_budget 270
 set ::aq_drt_reroute_iters 24
 if { [info exists ::env(_SDC_IN)] && [file exists [file join [file dirname $::env(_SDC_IN)] eco_moves.tcl]] } {
     source [file join [file dirname $::env(_SDC_IN)] eco_moves.tcl]
@@ -221,6 +229,10 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
     # time. With ::aq_eco_fit 1 (set by a list file), each grown or new cell is first slid to the nearest free,
     # site-aligned span of its own row (within ::aq_eco_fit_um), so no neighbour moves; detailed_placement still runs
     # after and only has work if a cell found no free span. Same row, so orientation is unchanged.
+    # ECO lab 5 (10 Nov): ::aq_eco_fit_only 1 (set by a list file, with ::aq_eco_dpl 0) swaps every cell that found no
+    # free span back to its old master, so no other cell moves and only the fitted cells' nets are ripped up. ser46 ->
+    # ser52 (same first route) changed the routed cap of 10,220 of 28,433 nets by > 1 %; ser53's stage 2 moved 1,111
+    # neighbours and ripped 2,769 nets. Returns the cells that found no span.
     if { ![info exists ::aq_eco_fit_um] } { set ::aq_eco_fit_um 40.0 }
     proc ::aq_eco_fit_cells { block insts } {
         set dbu [[[ord::get_db] getTech] getDbUnitsPerMicron]
@@ -240,6 +252,7 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
         }
         set nfit 0
         set nleft 0
+        set unfit {}
         set disp 0
         foreach inst $insts {
             set b [$inst getBBox]
@@ -247,7 +260,7 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
             set x0 [$b xMin]
             set w [expr { [$b xMax] - $x0 }]
             set me [$inst getName]
-            if { ![dict exists $rows $y] } { incr nleft; continue }
+            if { ![dict exists $rows $y] } { incr nleft; lappend unfit $inst; continue }
             lassign [dict get $rows $y] rlo rhi sw
             set others {}
             foreach o [dict get $occ $y] {
@@ -266,7 +279,70 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
                     if { $clear } { set best $x; break }
                 }
             }
-            if { $best eq "" } { incr nleft; continue }
+            if { $best eq "" && [info exists ::aq_eco_fit_slide] && $::aq_eco_fit_slide > 0 } {
+                # ECO lab 5 follow-up (10 Nov): no free span, but the cell's own tap segment (cells between the nearest
+                # fixed cells: taps, endcaps) may hold enough free sites in pieces (lab5fonone: 13 for 7, 6 for 6). Pack
+                # the segment in order with each cell as close to where it is as possible (forward pass, then a
+                # backward pass against the segment's right end); give up if it does not fit or would move more than
+                # ::aq_eco_fit_slide cells. The moved cells' nets are ripped up by ::aq_eco_apply's moved-cell check.
+                set srt [lsort -integer -index 0 [dict get $occ $y]]
+                set mi -1
+                for { set k 0 } { $k < [llength $srt] } { incr k } {
+                    if { [lindex $srt $k 2] eq $me } { set mi $k; break }
+                }
+                set isfixed {}
+                foreach o $srt {
+                    set oi [$block findInst [lindex $o 2]]
+                    lappend isfixed [expr { [$oi getPlacementStatus] in {FIRM LOCKED COVER}
+                                            || [regexp {filltie|endcap} [[$oi getMaster] getName]] }]
+                }
+                set a $mi
+                while { $a > 0 && ![lindex $isfixed [expr { $a - 1 }]] } { incr a -1 }
+                set z $mi
+                while { $z < [llength $srt] - 1 && ![lindex $isfixed [expr { $z + 1 }]] } { incr z }
+                set lo [expr { $a > 0 ? [lindex $srt [expr { $a - 1 }] 1] : $rlo }]
+                set hi [expr { $z < [llength $srt] - 1 ? [lindex $srt [expr { $z + 1 }] 0] : $rhi }]
+                set seg [lrange $srt $a $z]
+                set xs {}
+                set prev $lo
+                foreach o $seg {
+                    set nx [expr { max([lindex $o 0], $prev) }]
+                    lappend xs $nx
+                    set prev [expr { $nx + [lindex $o 1] - [lindex $o 0] }]
+                }
+                set nxt $hi
+                for { set k [expr { [llength $seg] - 1 }] } { $k >= 0 } { incr k -1 } {
+                    set o [lindex $seg $k]
+                    set ow [expr { [lindex $o 1] - [lindex $o 0] }]
+                    set nx [expr { min([lindex $xs $k], $nxt - $ow) }]
+                    lset xs $k $nx
+                    set nxt $nx
+                }
+                set nmv 0
+                foreach o $seg nx $xs { if { $nx != [lindex $o 0] } { incr nmv } }
+                if { [lindex $xs 0] >= $lo && $nmv <= $::aq_eco_fit_slide } {
+                    set nl {}
+                    foreach o [dict get $occ $y] { if { [lindex $o 0] < $lo || [lindex $o 0] >= $hi } { lappend nl $o } }
+                    foreach o $seg nx $xs {
+                        set ow [expr { [lindex $o 1] - [lindex $o 0] }]
+                        if { $nx != [lindex $o 0] } {
+                            set oi [$block findInst [lindex $o 2]]
+                            lassign [$oi getLocation] lx ly
+                            $oi setLocation [expr { $lx + $nx - [lindex $o 0] }] $ly
+                            set disp [expr { $disp + abs($nx - [lindex $o 0]) }]
+                        }
+                        lappend nl [list $nx [expr { $nx + $ow }] [lindex $o 2]]
+                    }
+                    dict set occ $y $nl
+                    puts "\[INFO] aquafuse pnr.sdc: post-route ECO: segment slide for $me: $nmv cells moved in\
+                          [format %.2f [expr { $lo / double($dbu) }]]-[format %.2f [expr { $hi / double($dbu) }]] um"
+                    incr nfit
+                    continue
+                }
+                puts "\[INFO] aquafuse pnr.sdc: post-route ECO: segment slide for $me failed ([llength $seg] cells,\
+                      [expr { [lindex $xs 0] >= $lo ? "$nmv to move" : "not enough free sites" }])"
+            }
+            if { $best eq "" } { incr nleft; lappend unfit $inst; continue }
             if { $best != $x0 } {
                 lassign [$inst getLocation] lx ly
                 $inst setLocation [expr { $lx + $best - $x0 }] $ly
@@ -281,6 +357,7 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
         }
         puts "\[INFO] aquafuse pnr.sdc: post-route ECO: in-row fit placed $nfit cells in free sites\
               ([format %.1f [expr { $disp / double($dbu) }]] um total), $nleft left to legalization"
+        return $unfit
     }
     proc ::aq_eco_apply {} {
         set block [ord::get_db_block]
@@ -295,6 +372,7 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
         set orient_before [dict create]
         foreach inst [$block getInsts] { dict set orient_before [$inst getName] [$inst getOrient] }
         set touched [dict create]
+        set origm [dict create]
         set nswap 0
         set missing {}
         if { $::aq_eco_regrt eq "incr" } {
@@ -316,6 +394,7 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
                 set master [$db findMaster $mname]
                 if { $master eq "NULL" || $master eq "" } { error "aquafuse pnr.sdc: no master $mname" }
                 if { [[$inst getMaster] getName] eq $mname } { continue }
+                if { ![dict exists $origm [$inst getName]] } { dict set origm [$inst getName] [$inst getMaster] }
                 if { ![$inst swapMaster $master] } { error "aquafuse pnr.sdc: swapMaster failed on $name -> $mname" }
                 dict set touched [$inst getName] 1
                 incr ns
@@ -400,11 +479,28 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
         }
         if { [info exists ::aq_eco_fit] && $::aq_eco_fit } {
             set fl {}
+            set fixed {}
             foreach n [dict keys $touched] {
                 set i [$block findInst $n]
-                if { $i ne "NULL" && $i ne "" && [$i getPlacementStatus] ni {FIRM LOCKED COVER} } { lappend fl $i }
+                if { $i eq "NULL" || $i eq "" } { continue }
+                if { [$i getPlacementStatus] ni {FIRM LOCKED COVER} } { lappend fl $i } else { lappend fixed $i }
             }
-            ::aq_eco_fit_cells $block $fl
+            set unfit [concat [::aq_eco_fit_cells $block $fl] $fixed]
+            if { [info exists ::aq_eco_fit_only] && $::aq_eco_fit_only } {
+                set reverted {}
+                foreach inst $unfit {
+                    set n [$inst getName]
+                    if { ![dict exists $origm $n] } {
+                        error "aquafuse pnr.sdc: fit-only: $n found no free span and is not a swap (a new buffer?)"
+                    }
+                    if { ![$inst swapMaster [dict get $origm $n]] } { error "aquafuse pnr.sdc: fit-only: swap back failed on $n" }
+                    dict unset touched $n
+                    incr nswap -1
+                    lappend reverted [string map {\\ {}} $n]
+                }
+                puts "\[INFO] aquafuse pnr.sdc: post-route ECO: fit-only: [llength $reverted] swaps found no free span and were\
+                      reverted: $reverted"
+            }
         }
         ::aq_eco_report_watch before
         global_connect
