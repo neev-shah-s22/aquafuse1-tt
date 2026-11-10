@@ -23,7 +23,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [null, fo_incr, fo_full, fo_none, conv]
+        # run 42832955895 ran fo_incr, fo_full, fo_none and conv; its "null" entry was read by YAML as a null value
+        variant: [nochange]
     steps:
       - name: checkout repo
         uses: actions/checkout@v6
