@@ -1,0 +1,99 @@
+name: eco_lab
+
+# ECO lab 5 (10 Nov, DR013 update 19). Re-runs only LibreLane's DetailedRouting -> STAPostPNR steps on ser52's FINISHED
+# route (gds run 42665224772, restored from its GDS_logs artifact; its DetailedRouting state_out is the post-stage-2
+# ODB). The first route is skipped (lab_post) and a no-op first ECO re-makes global routing in this process, as a real
+# build's stage 2 leaves it. Then src/pnr.sdc's own stage hook (::aq_eco_stage_run, the code a build's stage 3 would run)
+# applies src/eco_list2.tcl = lab/lists/<variant>.tcl: ser52's 8 own-wiring swaps under different stage knobs.
+# Not a candidate build: this branch carries no gds/precheck/gl_test workflow.
+
+on:
+  push:
+    branches: ['codex/gf-C-ecolab*']
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  lab:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [null, fo_incr, fo_full, fo_none, conv]
+    steps:
+      - name: checkout repo
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Checkout tt-support-tools (config_merged.json reads tt/tech/gf180mcuD/def/*.def)
+        uses: actions/checkout@v6
+        with:
+          repository: TinyTapeout/tt-support-tools
+          ref: main
+          path: tt
+
+      - name: Setup python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install LibreLane
+        run: pip install librelane==3.0.14
+
+      - name: Restore ser52's run (GDS_logs of gds run 42665224772)
+        uses: actions/download-artifact@v5
+        with:
+          name: GDS_logs
+          run-id: 42665224772
+          github-token: ${{ github.token }}
+          path: s52art
+
+      - name: Stage run directory and variant
+        run: |
+          set -euo pipefail
+          mkdir -p runs
+          mv s52art/runs/wokwi runs/wokwi
+          cp s52art/src/config_merged.json src/config_merged.json
+          rm -rf s52art
+          # the first (no-op) ECO reads src/eco_list.tcl: empty it; no planned moves
+          printf 'set ::aq_eco_lists [dict create]\n' > src/eco_list.tcl
+          rm -f src/eco_moves.tcl src/eco_list3.tcl src/eco_list4.tcl src/eco_list5.tcl
+          cp lab/variants/lab5.tcl src/eco_variant.tcl
+          cp lab/lists/${{ matrix.variant }}.tcl src/eco_list2.tcl
+          drt=$(ls -d runs/wokwi/*-openroad-detailedrouting | head -1)
+          echo "ser52 DRT step: $drt"; ls "$drt"
+          state="$drt/state_out.json"
+          echo "initial state: $state"
+          echo "LAB_STATE=$state" >> $GITHUB_ENV
+
+      - name: DetailedRouting -> STAPostPNR
+        run: |
+          mkdir -p runs/lab
+          python -m librelane --docker-no-tty --dockerized --pdk gf180mcuD --run-tag lab --force-run-dir runs/lab \
+            --from OpenROAD.DetailedRouting --to OpenROAD.STAPostPNR -i "$LAB_STATE" src/config_merged.json
+
+      - name: Summary
+        if: always()
+        run: |
+          grep -rhaE "aquafuse pnr.sdc|DRT-1231|DPL-00(34|35|36)|Number of violations|Total wire length =|Complete detail routing" runs/lab/*/*.log 2>/dev/null | head -300 || true
+          find runs/lab -maxdepth 2 -name "*.log" | sort
+          cat runs/lab/*-openroad-stapostpnr/summary.rpt 2>/dev/null | head -80 || true
+
+      - name: Upload lab results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: eco_lab5_${{ matrix.variant }}
+          path: |
+            runs/lab/**/*.log
+            runs/lab/**/*.rpt
+            runs/lab/**/*.drc
+            runs/lab/**/*.json
+            runs/lab/**/*.spef
+            runs/lab/**/*.nl.v
+            runs/lab/**/*.sdc
