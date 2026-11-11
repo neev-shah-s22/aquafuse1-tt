@@ -13,10 +13,11 @@ pins, the tests and, importantly, **what has and has not been measured**.
   GF180 gate-level netlist by the `gl_test` job.
 * `info.yaml` is the project description. The rated clock is 6.25 MHz (160 ns); the deployment clock is far lower.
 
-Status of the submitted layout (ser49, 9 Nov 2026): the GDS, precheck and gate-level test jobs pass, and DRC, LVS
-and antenna are clean. In the project's own nine-corner electrical signoff (tracked in the project repository),
-hold, output load and the library slew/cap limits pass; the project's tighter slew limits are not yet met on about
-fifteen pins. A revision that closes them will replace this one before the shuttle deadline.
+Status of the submitted layout (ser56, 11 Nov 2026): the GDS, precheck and gate-level test jobs pass, and DRC, LVS
+and antenna are clean. In the project's own nine-corner electrical signoff on the layout's extracted wiring (tracked
+in the project repository), every judged term passes: control-pin slew at the typical corner, data-pin slew at all
+nine corners, output load, the library slew/cap limits, hold (at least 0.198 ns) and latch-aware setup (at least
+36.8 ns). Core energy at the typical corner is 3.91 uJ per frame.
 
 This design was first built for SKY130 (8x4); that version is kept on the `sky130-final` branch. The notes in
 `docs/RELEASE_AND_RISKS.md` and some RTL comments date from it.
