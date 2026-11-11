@@ -1,4 +1,4 @@
-# ser55 stage 3 (10 Nov, DR013 update 19): ECO lab 7's list (lab 6's s3_none, g_ent[90] root moved ahead), on the
+# ser55/ser56 stage 3 (10 Nov, DR013 update 19): ECO lab 7's list (lab 6's s3_none, g_ent[90] root moved ahead), on the
 # finished stage-2 route (= ser52's).
 #   - the 3 of ser52c_r1's swaps that fit in place in lab 5 (_17020_, _29053_, g_ent[57] leaf);
 #   - lab5w4, what-if-checked on lab5fonone's own wiring (VPS vps-074593ae, all update 18 terms clean at 9 corners):
