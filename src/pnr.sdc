@@ -107,6 +107,14 @@ set ::aq_drt_ant_iters 0
 set ::aq_eco2_ant_passes 6
 set ::aq_drt_ant_margin 10
 set ::aq_drt_budget_min 245
+# ser55 (10 Nov, DR013 update 19): stage 3 is ECO lab 6's fit-only list (no legalization, guides kept, ~9-40 nets
+# re-routed). ser52 on a slow runner: DetailedRouting began 54 min into the job, stage 2 was done 269 min into the step,
+# and 8 min of steps followed. Stage 3 starts only before 275 min into the step, so it ends ~10 min later inside the 6 h
+# cap; on a later start the build is ser52's (stages 1-2).
+set ::aq_eco3_budget 275
+# A short-fix attempt (full global route + up to 24 iterations, ~20-40 min) starting after 270 min would run into the
+# cap; ser52's stage 2 needed none, and lab 5/6's fit-only routes ended at 0 violations.
+set ::aq_eco2_fix_budget 270
 set ::aq_drt_reroute_iters 24
 if { [info exists ::env(_SDC_IN)] && [file exists [file join [file dirname $::env(_SDC_IN)] eco_moves.tcl]] } {
     source [file join [file dirname $::env(_SDC_IN)] eco_moves.tcl]
@@ -278,23 +286,41 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
                 # backward pass against the segment's right end); give up if it does not fit or would move more than
                 # ::aq_eco_fit_slide cells. The moved cells' nets are ripped up by ::aq_eco_apply's moved-cell check.
                 set srt [lsort -integer -index 0 [dict get $occ $y]]
-                set mi -1
-                for { set k 0 } { $k < [llength $srt] } { incr k } {
-                    if { [lindex $srt $k 2] eq $me } { set mi $k; break }
-                }
-                set isfixed {}
+                # the cell's own segment is the one holding its anchored edge: swapMaster keeps the right edge of an
+                # R180 (S) or MY (FN) cell, so those grow to the LEFT. ECO lab 7 / ser55: g_ent[90]'s root (S) grew
+                # over its tap, and a search from its sorted position took the segment left of the tap (8 cells,
+                # full) instead of its own (6 cells, room). If the anchored edge lies in a fixed cell, the other edge.
+                set fixed [dict create]
+                set mx1 0
+                set mx2 0
                 foreach o $srt {
+                    if { [lindex $o 2] eq $me } { lassign $o mx1 mx2; continue }
                     set oi [$block findInst [lindex $o 2]]
-                    lappend isfixed [expr { [$oi getPlacementStatus] in {FIRM LOCKED COVER}
-                                            || [regexp {filltie|endcap} [[$oi getMaster] getName]] }]
+                    if { [$oi getPlacementStatus] in {FIRM LOCKED COVER}
+                         || [regexp {filltie|endcap} [[$oi getMaster] getName]] } {
+                        dict set fixed [lindex $o 2] [lrange $o 0 1]
+                    }
                 }
-                set a $mi
-                while { $a > 0 && ![lindex $isfixed [expr { $a - 1 }]] } { incr a -1 }
-                set z $mi
-                while { $z < [llength $srt] - 1 && ![lindex $isfixed [expr { $z + 1 }]] } { incr z }
-                set lo [expr { $a > 0 ? [lindex $srt [expr { $a - 1 }] 1] : $rlo }]
-                set hi [expr { $z < [llength $srt] - 1 ? [lindex $srt [expr { $z + 1 }] 0] : $rhi }]
-                set seg [lrange $srt $a $z]
+                set left_grower [expr { [$inst getOrient] in {R180 MY} }]
+                set piv [expr { $left_grower ? $mx2 - 1 : $mx1 }]
+                dict for {fn f} $fixed {
+                    if { [lindex $f 0] <= $piv && $piv < [lindex $f 1] } {
+                        set piv [expr { $left_grower ? $mx1 : $mx2 - 1 }]
+                    }
+                }
+                set lo $rlo
+                set hi $rhi
+                dict for {fn f} $fixed {
+                    if { [lindex $f 1] <= $piv && [lindex $f 1] > $lo } { set lo [lindex $f 1] }
+                    if { [lindex $f 0] > $piv && [lindex $f 0] < $hi } { set hi [lindex $f 0] }
+                }
+                set seg {}
+                foreach o $srt {
+                    set on [lindex $o 2]
+                    if { $on eq $me || (![dict exists $fixed $on] && [lindex $o 0] >= $lo && [lindex $o 0] < $hi) } {
+                        lappend seg $o
+                    }
+                }
                 set xs {}
                 set prev $lo
                 foreach o $seg {
@@ -313,8 +339,10 @@ if { [llength [info commands ::detailed_route]] && ![llength [info commands ::aq
                 set nmv 0
                 foreach o $seg nx $xs { if { $nx != [lindex $o 0] } { incr nmv } }
                 if { [lindex $xs 0] >= $lo && $nmv <= $::aq_eco_fit_slide } {
+                    set inseg [dict create]
+                    foreach o $seg { dict set inseg [lindex $o 2] 1 }
                     set nl {}
-                    foreach o [dict get $occ $y] { if { [lindex $o 0] < $lo || [lindex $o 0] >= $hi } { lappend nl $o } }
+                    foreach o [dict get $occ $y] { if { ![dict exists $inseg [lindex $o 2]] } { lappend nl $o } }
                     foreach o $seg nx $xs {
                         set ow [expr { [lindex $o 1] - [lindex $o 0] }]
                         if { $nx != [lindex $o 0] } {

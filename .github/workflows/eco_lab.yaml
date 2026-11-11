@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # ECO lab 7: lab 6's s3_none list with the g_ent[90] root moved ahead (lab 6: run 42866945353)
+        # ECO lab 8: lab 7 with the segment slide anchored on the cell's fixed edge (as ser56)
         variant: [s3_none]
     steps:
       - name: checkout repo
@@ -89,7 +89,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: eco_lab7_${{ matrix.variant }}
+          name: eco_lab8_${{ matrix.variant }}
           path: |
             runs/lab/**/*.log
             runs/lab/**/*.rpt
